@@ -51,6 +51,9 @@ enum Expr {
 	// Lambda function: (args) -> expr or (args) -> { stmts }
 	ELambda(params:Array<Param>, body:Either<Expr, Array<Stmt>>);
 
+	// Expression-level match/switch
+	EMatchExpr(subject:Expr, cases:Array<MatchCase>, defaultBody:Null<Array<Stmt>>);
+
 	// Assignment
 	EAssign(target:Expr, value:Expr);
 
@@ -102,8 +105,10 @@ enum Stmt {
 	// Using declaration — imports a class as extension methods
 	// using MyClass  => methods of MyClass become callable on the first arg type
 	SUsing(className:String);
+
 	/** static var x = val  — module-level or class-level static field */
 	SStaticVar(name:String, init:Null<Expr>);
+
 	/** static func f(...) {...} — module-level or class-level static method */
 	SStaticFunc(name:String, params:Array<Param>, returnType:Null<String>, body:Array<Stmt>);
 
@@ -118,21 +123,21 @@ enum Stmt {
 }
 
 typedef EnumVariant = {
-	name: String,
-	fields: Array<Param>   // empty for plain variants like Red, non-empty for Ok(msg)
+	name:String,
+	fields:Array<Param> // empty for plain variants like Red, non-empty for Ok(msg)
 }
 
 typedef MatchCase = {
-	pattern: MatchPattern,
-	body: Array<Stmt>
+	pattern:MatchPattern,
+	body:Array<Stmt>
 }
 
 enum MatchPattern {
-	MPValue(expr:Expr);              // case 42, case "hello", case true
-	MPRange(from:Expr, to:Expr);     // case 1...5
-	MPType(typeName:String);         // case String, case Number, case Bool, case Null
-	MPArray(elements:Array<Expr>);   // case [x, y]  (destructure)
-	MPBind(name:String);             // case x  (bind to variable)
+	MPValue(expr:Expr); // case 42, case "hello", case true
+	MPRange(from:Expr, to:Expr); // case 1...5
+	MPType(typeName:String); // case String, case Number, case Bool, case Null
+	MPArray(elements:Array<Expr>); // case [x, y]  (destructure)
+	MPBind(name:String); // case x  (bind to variable)
 	MPEnum(variantName:String, binds:Array<Null<String>>); // case Ok(msg) or case Red
 }
 
@@ -153,7 +158,8 @@ typedef ClassMethod = {
 	returnType:Null<TypeHint>,
 	body:Array<Stmt>,
 	isConstructor:Bool,
-	?isStatic:Bool
+	?isStatic:Bool,
+	?isOverride:Bool
 }
 
 typedef ClassField = {

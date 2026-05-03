@@ -13,8 +13,10 @@ enum Keyword {
 	KFunction; // function - function alias
 	KClass; // class - class declaration
 	KExtends; // extends - class inheritance
+	KOverride; // override - explicit method override
 	KNew; // new - instantiation
 	KThis; // this - self reference
+	KSuper; // super - parent reference
 	KReturn; // return
 	KIf; // if
 	KElse; // else
@@ -42,6 +44,8 @@ enum Keyword {
 	KAbstract;
 	KStatic; // abstract type
 	KIs; // type check: x is SomeType
+	KPublic; // access modifier (parser-only placeholder)
+	KPrivate; // access modifier (parser-only placeholder)
 }
 
 /**

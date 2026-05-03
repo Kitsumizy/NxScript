@@ -21,6 +21,8 @@ class Compiler {
 	var functions:Array<FunctionChunk>;
 	var strings:Array<String>;
 	var stringMap:Map<String, Int>; // dedup string constants so we don't store "x" 500 times
+	var memberNames:Array<String>;
+	var memberMap:Map<String, Int>;
 	var currentLine:Int = 0;
 	var currentCol:Int = 0;
 
@@ -39,8 +41,10 @@ class Compiler {
 	var localSlots:Map<String, Int> = null;
 	var nextLocalSlot:Int = 0;
 	var globalSlots:Map<String, Int>;
+
 	/** Names of static globals — preserved by reset_context(). Read by Interpreter after compile(). */
 	public var staticGlobalNames:Map<String, Bool> = new Map();
+
 	var globalNames:Array<String>;
 	var globalConstMask:Array<Bool>;
 	var upvalueSlots:Map<String, Int> = null;
@@ -107,11 +111,14 @@ class Compiler {
 		globalSlots = new Map();
 		globalNames = [];
 		globalConstMask = [];
+		memberNames = [];
+		memberMap = new Map();
 		chunk = {
 			instructions: [],
 			constants: constants,
 			functions: functions,
 			strings: strings,
+			memberNames: memberNames,
 			globalNames: globalNames,
 			globalConstMask: globalConstMask
 		};
@@ -187,13 +194,15 @@ class Compiler {
 			case SClass(className, superClass, methods, fields):
 				// Separate static and instance members
 				var instanceMethods = methods.filter(m -> m.isStatic != true);
-				var staticMethods   = methods.filter(m -> m.isStatic == true);
-				var instanceFields  = fields.filter(f -> f.isStatic != true);
-				var staticFields    = fields.filter(f -> f.isStatic == true);
+				var staticMethods = methods.filter(m -> m.isStatic == true);
+				var instanceFields = fields.filter(f -> f.isStatic != true);
+				var staticFields = fields.filter(f -> f.isStatic == true);
 
 				var classMethodNames = new Map<String, Bool>();
-				for (m in instanceMethods) classMethodNames.set(m.name, true);
-				for (m in staticMethods)   classMethodNames.set(m.name, true);
+				for (m in instanceMethods)
+					classMethodNames.set(m.name, true);
+				for (m in staticMethods)
+					classMethodNames.set(m.name, true);
 
 				// Push class name
 				emitConstant(VString(className));
@@ -211,12 +220,15 @@ class Compiler {
 					functions.push(funcChunk);
 					emitWithArg(Op.MAKE_FUNC, funcIndex);
 					emit(method.isConstructor ? Op.LOAD_TRUE : Op.LOAD_FALSE);
+					emit(method.isOverride == true ? Op.LOAD_TRUE : Op.LOAD_FALSE);
 				}
 				// Push instance fields
 				for (field in instanceFields) {
 					emitConstant(VString(field.name));
-					if (field.init != null) compileExpression(field.init);
-					else emit(Op.LOAD_NULL);
+					if (field.init != null)
+						compileExpression(field.init);
+					else
+						emit(Op.LOAD_NULL);
 				}
 				// Create class object
 				var counts = (instanceMethods.length << 16) | instanceFields.length;
@@ -233,8 +245,10 @@ class Compiler {
 					}
 					for (field in staticFields) {
 						emitConstant(VString(field.name));
-						if (field.init != null) compileExpression(field.init);
-						else emit(Op.LOAD_NULL);
+						if (field.init != null)
+							compileExpression(field.init);
+						else
+							emit(Op.LOAD_NULL);
 					}
 					var sCounts = (staticMethods.length << 16) | staticFields.length;
 					emitWithArg(Op.MAKE_CLASS_STATICS, sCounts);
@@ -475,38 +489,55 @@ class Compiler {
 				// Evaluate init once, then index into it for each name
 				var tmpName = '__da_${syntheticCounter++}';
 				compileExpression(init);
-				if (localSlots != null) emitWithArg(Op.STORE_LOCAL, allocSlot(tmpName))
-				else emitWithString(Op.STORE_LET, tmpName);
+				if (localSlots != null)
+					emitWithArg(Op.STORE_LOCAL, allocSlot(tmpName))
+				else
+					emitWithString(Op.STORE_LET, tmpName);
 				emit(Op.POP);
 				for (i in 0...names.length) {
 					var name = names[i];
-					if (name == null) continue; // _ = skip
-					if (localSlots != null) emitWithArg(Op.LOAD_LOCAL, localSlots.get(tmpName))
-					else emitWithString(Op.LOAD_VAR, tmpName);
+					if (name == null)
+						continue; // _ = skip
+					if (localSlots != null)
+						emitWithArg(Op.LOAD_LOCAL, localSlots.get(tmpName))
+					else
+						emitWithString(Op.LOAD_VAR, tmpName);
 					emitConstant(VNumber(i));
 					emit(Op.GET_INDEX);
-					if (localSlots != null) emitWithArg(Op.STORE_LOCAL, allocSlot(name))
-					else emitWithString(Op.STORE_LET, name);
-					if (!isLast) emit(Op.POP);
+					if (localSlots != null)
+						emitWithArg(Op.STORE_LOCAL, allocSlot(name))
+					else
+						emitWithString(Op.STORE_LET, name);
+					if (!isLast)
+						emit(Op.POP);
 				}
-				if (!isLast) emit(Op.LOAD_NULL);
+				if (!isLast)
+					emit(Op.LOAD_NULL);
 
 			case SDestructureDict(names, init):
 				// var {x, y} = expr
 				var tmpName = '__dd_${syntheticCounter++}';
 				compileExpression(init);
-				if (localSlots != null) emitWithArg(Op.STORE_LOCAL, allocSlot(tmpName))
-				else emitWithString(Op.STORE_LET, tmpName);
+				if (localSlots != null)
+					emitWithArg(Op.STORE_LOCAL, allocSlot(tmpName))
+				else
+					emitWithString(Op.STORE_LET, tmpName);
 				emit(Op.POP);
 				for (name in names) {
-					if (localSlots != null) emitWithArg(Op.LOAD_LOCAL, localSlots.get(tmpName))
-					else emitWithString(Op.LOAD_VAR, tmpName);
-					emitWithString(Op.GET_MEMBER, name);
-					if (localSlots != null) emitWithArg(Op.STORE_LOCAL, allocSlot(name))
-					else emitWithString(Op.STORE_LET, name);
-					if (!isLast) emit(Op.POP);
+					if (localSlots != null)
+						emitWithArg(Op.LOAD_LOCAL, localSlots.get(tmpName))
+					else
+						emitWithString(Op.LOAD_VAR, tmpName);
+					emitWithMember(Op.GET_MEMBER, name);
+					if (localSlots != null)
+						emitWithArg(Op.STORE_LOCAL, allocSlot(name))
+					else
+						emitWithString(Op.STORE_LET, name);
+					if (!isLast)
+						emit(Op.POP);
 				}
-				if (!isLast) emit(Op.LOAD_NULL);
+				if (!isLast)
+					emit(Op.LOAD_NULL);
 
 			case SEnum(name, variants):
 				// Build an enum object via __make_enum__(enumName, [variantName, fieldCount, ...])
@@ -523,7 +554,8 @@ class Compiler {
 					emitWithArg(Op.STORE_LOCAL, allocSlot(name))
 				else
 					emitWithArg(Op.STORE_GLOBAL, allocGlobalSlot(name));
-				if (!isLast) emit(Op.POP);
+				if (!isLast)
+					emit(Op.POP);
 
 			case SAbstract(name, baseType, methods):
 				// Abstract compiles as a class with a special marker.
@@ -534,12 +566,15 @@ class Compiler {
 			case SStaticVar(name, init):
 				// Module-level static var — compiled as a regular global
 				// but marked so reset_context() preserves it
-				if (init != null) compileExpression(init);
-				else emit(Op.LOAD_NULL);
+				if (init != null)
+					compileExpression(init);
+				else
+					emit(Op.LOAD_NULL);
 				emitWithArg(Op.STORE_GLOBAL, allocGlobalSlot(name));
 				// Mark as static so VM knows to preserve across resets
 				staticGlobalNames.set(name, true);
-				if (!isLast) emit(Op.POP);
+				if (!isLast)
+					emit(Op.POP);
 
 			case SStaticFunc(name, params, returnType, body):
 				// Module-level static func — compiled like SFunc but preserved across resets
@@ -549,11 +584,13 @@ class Compiler {
 				emitWithArg(Op.MAKE_FUNC, funcIndex);
 				emitWithArg(Op.STORE_GLOBAL, allocGlobalSlot(name));
 				staticGlobalNames.set(name, true);
-				if (!isLast) emit(Op.POP);
+				if (!isLast)
+					emit(Op.POP);
 
 			case SUsing(className):
 				emitWithString(Op.REGISTER_USING, className);
-				if (!isLast) emit(Op.LOAD_NULL);
+				if (!isLast)
+					emit(Op.LOAD_NULL);
 
 			case SMatch(subject, cases, defaultBody):
 				compileMatch(subject, cases, defaultBody, isLast);
@@ -562,12 +599,14 @@ class Compiler {
 				// Only emit ENTER/EXIT_SCOPE when at module level AND the block
 				// actually declares let/const — avoids a Map alloc on every if/while/for body.
 				var needsScope = (localSlots == null) && blockHasLetDecl(stmts);
-				if (needsScope) emit(Op.ENTER_SCOPE);
+				if (needsScope)
+					emit(Op.ENTER_SCOPE);
 				for (i in 0...stmts.length) {
 					var stmtIsLast = isLast && (i == stmts.length - 1);
 					compileStatement(stmts[i], stmtIsLast);
 				}
-				if (needsScope) emit(Op.EXIT_SCOPE);
+				if (needsScope)
+					emit(Op.EXIT_SCOPE);
 
 			case STryCatch(body, catchVar, catchBody):
 				// Emit SETUP_TRY pointing to the catch block
@@ -699,7 +738,7 @@ class Compiler {
 						}
 					case EMember(obj, field):
 						compileExpression(obj);
-						emitWithArg(isInc ? Op.INC_MEMBER : Op.DEC_MEMBER, addString(field));
+						emitWithArg(isInc ? Op.INC_MEMBER : Op.DEC_MEMBER, addMember(field));
 					case EIndex(obj, idx):
 						compileExpression(obj);
 						compileExpression(idx);
@@ -710,7 +749,7 @@ class Compiler {
 
 			case EMember(object, field):
 				compileExpression(object);
-				emitWithString(Op.GET_MEMBER, field);
+				emitWithMember(Op.GET_MEMBER, field);
 
 			case EIndex(object, index):
 				compileExpression(object);
@@ -730,7 +769,7 @@ class Compiler {
 							&& (localSlots == null || !localSlots.exists(name))):
 						// Inside class methods, allow bare method calls: foo() => this.foo()
 						emit(Op.GET_THIS);
-						emitWithString(Op.GET_MEMBER, name);
+						emitWithMember(Op.GET_MEMBER, name);
 						for (arg in args)
 							compileExpression(arg);
 						emitWithArg(Op.CALL, args.length);
@@ -765,6 +804,9 @@ class Compiler {
 				functions.push(funcChunk);
 				emitWithArg(Op.MAKE_LAMBDA, funcIndex);
 
+			case EMatchExpr(subject, cases, defaultBody):
+				compileMatch(subject, cases, defaultBody, true);
+
 			case EIs(expr, typeName):
 				emitWithString(Op.LOAD_VAR, "__is__");
 				compileExpression(expr);
@@ -788,7 +830,7 @@ class Compiler {
 				compileExpression(left);
 				emit(Op.DUP);
 				var jumpSkip = emitJump(Op.JUMP_IF_NOT_NULL); // if not null, skip right
-				emit(Op.POP);                                  // pop the null
+				emit(Op.POP); // pop the null
 				compileExpression(right);
 				patchJump(jumpSkip);
 
@@ -798,7 +840,7 @@ class Compiler {
 				compileExpression(object);
 				emit(Op.DUP);
 				var jumpNull = emitJump(Op.JUMP_IF_NULL); // if null, leave null on stack
-				emitWithString(Op.GET_MEMBER, field);
+				emitWithMember(Op.GET_MEMBER, field);
 				patchJump(jumpNull);
 
 			case EAssign(target, value):
@@ -821,7 +863,7 @@ class Compiler {
 						// Stack: [value, object] → SET_MEMBER pops object then value, pushes value
 						compileExpression(value);
 						compileExpression(object);
-						emitWithString(Op.SET_MEMBER, field);
+						emitWithMember(Op.SET_MEMBER, field);
 
 					case EIndex(object, index):
 						// SET_INDEX pops: value (top), index, object (bottom) → stack [object, index, value]
@@ -1173,13 +1215,14 @@ class Compiler {
 					// Bind payload fields if any
 					for (i in 0...binds.length) {
 						var bname = binds[i];
-						if (bname == null) continue;
+						if (bname == null)
+							continue;
 						// Load subject.values[i]
 						if (localSlots != null)
 							emitWithArg(Op.LOAD_LOCAL, localSlots.get(subjectName))
 						else
 							emitWithString(Op.LOAD_VAR, subjectName);
-						emitWithString(Op.GET_MEMBER, "values");
+						emitWithMember(Op.GET_MEMBER, "values");
 						emitConstant(VNumber(i));
 						emit(Op.GET_INDEX);
 						if (localSlots != null)
@@ -1197,7 +1240,7 @@ class Compiler {
 						emitWithArg(Op.LOAD_LOCAL, localSlots.get(subjectName))
 					else
 						emitWithString(Op.LOAD_VAR, subjectName);
-					emitWithString(Op.GET_MEMBER, "length");
+					emitWithMember(Op.GET_MEMBER, "length");
 					emitConstant(VNumber(elements.length));
 					emit(Op.EQ);
 					jumpOverBody = emitJump(Op.JUMP_IF_FALSE);
@@ -1257,6 +1300,8 @@ class Compiler {
 		var savedTryDepth = tryDepth;
 		var savedLocalSlots = localSlots;
 		var savedNextLocalSlot = nextLocalSlot;
+		var savedMemberNames = memberNames;
+		var savedMemberMap = memberMap;
 		var savedUpvalueSlots = upvalueSlots;
 		var savedUpvalueNames = upvalueNames;
 		var savedEnclosingLocalSlots = enclosingLocalSlots;
@@ -1281,11 +1326,14 @@ class Compiler {
 		functions = [];
 		strings = [];
 		stringMap = new Map();
+		memberNames = [];
+		memberMap = new Map();
 		chunk = {
 			instructions: [],
 			constants: constants,
 			functions: functions,
 			strings: strings,
+			memberNames: memberNames,
 			globalNames: globalNames,
 			globalConstMask: globalConstMask
 		};
@@ -1325,6 +1373,8 @@ class Compiler {
 		tryDepth = savedTryDepth;
 		localSlots = savedLocalSlots;
 		nextLocalSlot = savedNextLocalSlot;
+		memberNames = savedMemberNames;
+		memberMap = savedMemberMap;
 		upvalueSlots = savedUpvalueSlots;
 		upvalueNames = savedUpvalueNames;
 		enclosingLocalSlots = savedEnclosingLocalSlots;
@@ -1337,10 +1387,12 @@ class Compiler {
 	// Returns true if any direct child statement is SLet or SConst (shallow check).
 	// Used to avoid emitting ENTER/EXIT_SCOPE on blocks that don't need it.
 	static function blockHasLetDecl(stmts:Array<Stmt>):Bool {
-		for (s in stmts) switch (s) {
-			case SLet(_, _, _) | SConst(_, _, _): return true;
-			default:
-		}
+		for (s in stmts)
+			switch (s) {
+				case SLet(_, _, _) | SConst(_, _, _):
+					return true;
+				default:
+			}
 		return false;
 	}
 
@@ -1352,6 +1404,16 @@ class Compiler {
 		var index = strings.length;
 		strings.push(str);
 		stringMap.set(str, index);
+		return index;
+	}
+
+	function addMember(name:String):Int {
+		if (memberMap.exists(name)) {
+			return memberMap.get(name);
+		}
+		var index = memberNames.length;
+		memberNames.push(name);
+		memberMap.set(name, index);
 		return index;
 	}
 
@@ -1383,12 +1445,22 @@ class Compiler {
 		});
 	}
 
+	function emitWithMember(op:Int, name:String) {
+		var index = addMember(name);
+		chunk.instructions.push({
+			op: op,
+			arg: index,
+			line: currentLine,
+			col: currentCol
+		});
+	}
+
 	function emitCallMember(field:String, argc:Int) {
 		if (argc < 0 || argc > 0xFFFF)
 			throw 'Too many call arguments for CALL_MEMBER: $argc';
-		var fieldIdx = addString(field);
+		var fieldIdx = addMember(field);
 		if (fieldIdx < 0 || fieldIdx > 0xFFFF)
-			throw 'String pool index out of CALL_MEMBER range: $fieldIdx';
+			throw 'Member index out of CALL_MEMBER range: $fieldIdx';
 		emitWithArg(Op.CALL_MEMBER, (fieldIdx << 16) | argc);
 	}
 

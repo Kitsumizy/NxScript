@@ -18,6 +18,7 @@ class BytecodeSerializer {
 	static inline var MAGIC_V1 = 0x4E580001; // "NX" + version 1
 	static inline var MAGIC_V2 = 0x4E580002; // "NX" + version 2 (globalNames)
 	static inline var MAGIC_V3 = 0x4E580003; // "NX" + version 3 (global const mask + upvalue names)
+	static inline var MAGIC_V4 = 0x4E580004; // "NX" + version 4 (memberNames table)
 
 	/**
 	 * Serializes a Chunk to raw bytes. Feed the result to deserialize() to get it back.
@@ -25,7 +26,7 @@ class BytecodeSerializer {
 	public static function serialize(chunk:Chunk):Bytes {
 		var output = new BytesOutput();
 
-		output.writeInt32(MAGIC_V3);
+		output.writeInt32(MAGIC_V4);
 
 		writeChunk(output, chunk);
 
@@ -44,8 +45,9 @@ class BytecodeSerializer {
 			case MAGIC_V1: 1;
 			case MAGIC_V2: 2;
 			case MAGIC_V3: 3;
+			case MAGIC_V4: 4;
 			default:
-				throw 'Invalid bytecode file format (expected 0x${StringTools.hex(MAGIC_V3, 8)}, 0x${StringTools.hex(MAGIC_V2, 8)} or 0x${StringTools.hex(MAGIC_V1, 8)}, got 0x${StringTools.hex(magic, 8)})';
+				throw 'Invalid bytecode file format (expected 0x${StringTools.hex(MAGIC_V4, 8)}, 0x${StringTools.hex(MAGIC_V3, 8)}, 0x${StringTools.hex(MAGIC_V2, 8)} or 0x${StringTools.hex(MAGIC_V1, 8)}, got 0x${StringTools.hex(magic, 8)})';
 		};
 
 		return readChunk(input, version);
@@ -79,6 +81,13 @@ class BytecodeSerializer {
 		output.writeInt32(chunk.strings.length);
 		for (str in chunk.strings) {
 			writeString(output, str);
+		}
+
+		// Member name pool (v4)
+		var memberNames = chunk.memberNames != null ? chunk.memberNames : [];
+		output.writeInt32(memberNames.length);
+		for (name in memberNames) {
+			writeString(output, name);
 		}
 
 		// Constants
@@ -202,6 +211,14 @@ class BytecodeSerializer {
 			strings.push(readString(input));
 		}
 
+		// Member name pool (v4+)
+		var memberNames:Array<String> = [];
+		if (version >= 4) {
+			var memberCount = input.readInt32();
+			for (i in 0...memberCount)
+				memberNames.push(readString(input));
+		}
+
 		// Constants
 		var constantCount = input.readInt32();
 		var constants = [];
@@ -245,6 +262,7 @@ class BytecodeSerializer {
 
 		return {
 			strings: strings,
+			memberNames: memberNames,
 			constants: constants,
 			instructions: instructions,
 			functions: functions,

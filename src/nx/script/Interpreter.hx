@@ -1,17 +1,25 @@
 package nx.script;
-import nx.script.Preprocessor;
-import nx.script.SyntaxRules;
 
+import nx.script.Preprocessor;
 import nx.script.Bytecode;
 import nx.script.NativeProxy;
 import nx.script.BytecodeSerializer;
 import nx.script.Compiler;
+import nx.script.parsers.IScriptParser;
+import nx.script.parsers.NxScriptParser;
 import nx.script.NxProxy;
-import nx.script.Parser;
-import nx.script.Tokenizer;
 import nx.script.VM;
+import nx.script.types.NxCallable;
+import nx.script.types.NxFloat;
+import nx.script.types.NxInt;
+import nx.script.types.NxNative;
+import nx.script.types.NxNumber;
+import nx.script.types.NxObject;
+import nx.script.types.NxString;
 import haxe.io.Path;
+
 using StringTools;
+
 /**
  * The front door. Tokenizes, parses, compiles, and runs your script in one call.
  *
@@ -42,16 +50,29 @@ class Interpreter {
 
 	/** Controls VM cache flushing strategy. See GcKind for options. Default: SOFT. */
 	public var gc_kind(get, set):GcKind;
-	inline function get_gc_kind():GcKind return vm.gc_kind;
-	inline function set_gc_kind(v:GcKind):GcKind { vm.gc_kind = v; return v; }
+
+	inline function get_gc_kind():GcKind
+		return vm.gc_kind;
+
+	inline function set_gc_kind(v:GcKind):GcKind {
+		vm.gc_kind = v;
+		return v;
+	}
 
 	/** Object count threshold used in SOFT gc mode before flushing caches. Default: 512. */
 	public var gc_softThreshold(get, set):Int;
-	inline function get_gc_softThreshold():Int return vm.gc_softThreshold;
-	inline function set_gc_softThreshold(v:Int):Int { vm.gc_softThreshold = v; return v; }
+
+	inline function get_gc_softThreshold():Int
+		return vm.gc_softThreshold;
+
+	inline function set_gc_softThreshold(v:Int):Int {
+		vm.gc_softThreshold = v;
+		return v;
+	}
 
 	/** Manually flush all VM internal caches, regardless of gc_kind. */
-	public function gc():Void vm.gc();
+	public function gc():Void
+		vm.gc();
 
 	/**
 	 * Run a script function once per native Haxe object — loop executes in Haxe, not in script.
@@ -96,7 +117,6 @@ class Interpreter {
 	public function enableSandbox(?extraBlocklist:Array<String>):Void
 		vm.enableSandbox(extraBlocklist);
 
-
 	/**
 	 * Wrap a single native Haxe object (e.g. FlxSprite) as a VDict proxy.
 	 * Fields are read once into a shadow Map<String,Value> — script accesses
@@ -127,19 +147,20 @@ class Interpreter {
 
 	/** Kept for API compat. Use -D NXDEBUG compile flag for actual debug output. */
 	var debug:Bool = false;
+
 	var strictByDefault:Bool = false;
 
-	/** Active syntax rules for this interpreter. Change before calling run(). */
-	public var rules:SyntaxRules = null;
+	/** Active parser frontend. Swap this to support alternate source syntaxes. */
+	public var parser:IScriptParser;
 
 	/** Preprocessor defines for #if/#end directives. Pre-populated from compile target. */
 	public var defines:Map<String, Bool> = Preprocessor.defaultDefines();
 
-	public function new(debug:Bool = false, strict:Bool = false, ?rules:SyntaxRules) {
+	public function new(debug:Bool = false, strict:Bool = false) {
 		this.debug = debug;
 		this.strictByDefault = strict;
 		this.vm = new VM(debug);
-		this.rules = rules ?? SyntaxRules.nxScript();
+		this.parser = new NxScriptParser();
 
 		// Register built-in functions
 		registerBuiltins();
@@ -154,7 +175,7 @@ class Interpreter {
 		register("trace", -1, function(args:Array<Value>):Value {
 			var parts:Array<Dynamic> = [];
 			for (arg in args) {
-				parts.push(vm.valueToHaxe(arg));
+				parts.push(vm.valueToString(arg));
 			}
 
 			// Get current instruction line info
@@ -174,7 +195,7 @@ class Interpreter {
 		register("print", -1, function(args:Array<Value>):Value {
 			var parts:Array<Dynamic> = [];
 			for (arg in args) {
-				parts.push(vm.valueToHaxe(arg));
+				parts.push(vm.valueToString(arg));
 			}
 			#if sys
 			Sys.print(parts.join(" "));
@@ -187,7 +208,7 @@ class Interpreter {
 		register("println", -1, function(args:Array<Value>):Value {
 			var parts:Array<Dynamic> = [];
 			for (arg in args) {
-				parts.push(vm.valueToHaxe(arg));
+				parts.push(vm.valueToString(arg));
 			}
 			#if sys
 			Sys.println(parts.join(" "));
@@ -412,10 +433,19 @@ class Interpreter {
 			var from = 0;
 			var to = 0;
 			if (args.length == 1) {
-				to = switch (args[0]) { case VNumber(n): Std.int(n); default: throw "range expects a number"; };
+				to = switch (args[0]) {
+					case VNumber(n): Std.int(n);
+					default: throw "range expects a number";
+				};
 			} else if (args.length == 2) {
-				from = switch (args[0]) { case VNumber(n): Std.int(n); default: throw "range expects numbers"; };
-				to   = switch (args[1]) { case VNumber(n): Std.int(n); default: throw "range expects numbers"; };
+				from = switch (args[0]) {
+					case VNumber(n): Std.int(n);
+					default: throw "range expects numbers";
+				};
+				to = switch (args[1]) {
+					case VNumber(n): Std.int(n);
+					default: throw "range expects numbers";
+				};
 			} else {
 				throw "range expects 1 or 2 arguments";
 			}
@@ -534,36 +564,22 @@ class Interpreter {
 	 * Run source code and return the result
 	 */
 	public function run(source:String, ?scriptName:String = "script"):Value {
+		var scriptSource = source;
 		try {
 			var prepared = preprocessImports(source, scriptName);
 			// Run #if/#end preprocessor
-			var scriptSource = Preprocessor.run(prepared.source, defines);
-			var trimmed = StringTools.trim(scriptSource);
-			var strictFromPragma = StringTools.startsWith(trimmed, '"use strict";')
-				|| StringTools.startsWith(trimmed, "'use strict';")
-				|| StringTools.startsWith(trimmed, '"use strict"')
-				|| StringTools.startsWith(trimmed, "'use strict'");
-			var strictMode = strictByDefault || strictFromPragma;
+			scriptSource = Preprocessor.run(prepared.source, defines);
+			var strictMode = computeStrictMode(scriptSource);
 
 			// Set script name in VM
 			vm.scriptName = scriptName;
 
-			// Tokenize
-			var tokenizer = new Tokenizer(scriptSource, rules);
-			var tokens = tokenizer.tokenize();
-
-			#if NXDEBUG
-			trace("=== TOKENS ===");
-			for (t in tokens) trace('${t.line}:${t.col} -> ${t.token}');
-			#end
-
-			// Parse
-			var parser = new Parser(tokens, strictMode, rules);
-			var ast = parser.parse();
+			var ast = parser.parse(scriptSource, strictMode);
 
 			#if NXDEBUG
 			trace("=== AST ===");
-			for (stmt in ast) trace(stmt);
+			for (stmt in ast)
+				trace(stmt);
 			#end
 
 			// Compile to bytecode
@@ -589,11 +605,14 @@ class Interpreter {
 
 			return result;
 		} catch (e:Dynamic) {
-			var pretty = formatPrettyError(Std.string(e), source, scriptName);
+			// Show diagnostics against the actual source the parser compiled
+			// (after import inlining + preprocessor), otherwise line numbers can lie.
+			var pretty = formatPrettyError(Std.string(e), scriptSource, scriptName);
 			__print_ln(pretty);
 			throw pretty;
 		}
 	}
+
 	static function __print_ln(s:String):Void {
 		#if sys
 		Sys.println(s);
@@ -601,6 +620,7 @@ class Interpreter {
 		trace(s);
 		#end
 	}
+
 	function preprocessImports(source:String, scriptName:String, ?visited:Map<String, Bool>):{source:String} {
 		if (visited == null)
 			visited = new Map<String, Bool>();
@@ -615,17 +635,27 @@ class Interpreter {
 			if (module != null) {
 				if (module != null && module != "") {
 					if (isScriptImport(module)) {
-						var importPath = resolveImportPath(scriptName, module);
-						if (!visited.exists(importPath)) {
-							visited.set(importPath, true);
-							var imported = tryLoadScriptText(importPath);
+						var candidates = resolveImportCandidates(scriptName, module);
+						var loaded = false;
+						var resolvedPath = candidates.length > 0 ? candidates[0] : module;
+
+						for (candidate in candidates) {
+							if (visited.exists(candidate))
+								continue;
+							visited.set(candidate, true);
+							var imported = tryLoadScriptText(candidate);
 							if (imported != null) {
-								var nested = preprocessImports(imported, importPath, visited);
+								resolvedPath = candidate;
+								var nested = preprocessImports(imported, candidate, visited);
 								out.push("");
 								out.push(nested.source);
-							} else {
-								__print_ln('Warning: Cant load script import: ' + module + ' (resolved: ' + importPath + ')');
+								loaded = true;
+								break;
 							}
+						}
+
+						if (!loaded) {
+							__print_ln('Warning: Cant load script import: ' + module + ' (resolved: ' + resolvedPath + ')');
 						}
 					} else if (!resolveImportedModule(module)) {
 						// Check if it's already registered as a global native (e.g. Sys, Math)
@@ -689,25 +719,58 @@ class Interpreter {
 		if (module == null || module == "")
 			return false;
 		return StringTools.endsWith(module, ".nx")
+			|| StringTools.endsWith(module, ".hx")
+			|| StringTools.endsWith(module, ".nxb")
 			|| module.indexOf("/") >= 0
 			|| module.indexOf("\\") >= 0
 			|| StringTools.startsWith(module, "./")
 			|| StringTools.startsWith(module, "../");
 	}
 
-	function resolveImportPath(scriptName:String, module:String):String {
+	function normalizeScriptImportModule(module:String):String {
 		var normalizedModule = StringTools.replace(module, "\\", "/");
-		var isAbsolute = StringTools.startsWith(normalizedModule, "/") || ~/^[A-Za-z]:\//.match(normalizedModule);
-		if (!StringTools.endsWith(normalizedModule, ".nx")) {
+		if (!StringTools.endsWith(normalizedModule, ".nx")
+			&& !StringTools.endsWith(normalizedModule, ".hx")
+			&& !StringTools.endsWith(normalizedModule, ".nxb")) {
 			normalizedModule += ".nx";
 		}
+		return normalizedModule;
+	}
+
+	function resolveImportCandidates(scriptName:String, module:String):Array<String> {
+		var normalizedModule = normalizeScriptImportModule(module);
+		var isAbsolute = StringTools.startsWith(normalizedModule, "/") || ~/^[A-Za-z]:\//.match(normalizedModule);
 		if (isAbsolute)
-			return Path.normalize(normalizedModule);
+			return [Path.normalize(normalizedModule)];
+
+		var out:Array<String> = [];
+		inline function addCandidate(p:String):Void {
+			var normalized = Path.normalize(p);
+			if (out.indexOf(normalized) < 0)
+				out.push(normalized);
+		}
 
 		var baseDir = getScriptDirectory(scriptName);
-		if (baseDir == "")
-			return normalizedModule;
-		return Path.normalize(baseDir + "/" + normalizedModule);
+		var isExplicitRelative = StringTools.startsWith(normalizedModule, "./") || StringTools.startsWith(normalizedModule, "../");
+		var hasDirectory = normalizedModule.indexOf("/") >= 0;
+
+		if (isExplicitRelative) {
+			if (baseDir == "")
+				addCandidate(normalizedModule);
+			else
+				addCandidate(baseDir + "/" + normalizedModule);
+			return out;
+		}
+
+		if (hasDirectory)
+			addCandidate(normalizedModule);
+
+		if (baseDir != "")
+			addCandidate(baseDir + "/" + normalizedModule);
+		else
+			addCandidate(normalizedModule);
+
+		return out;
 	}
 
 	function getScriptDirectory(scriptName:String):String {
@@ -859,13 +922,13 @@ class Interpreter {
 			throw 'Unable to load script file: ' + normalized;
 		return run(content, normalized);
 	}
+
 	/**
 	 * Reset the VM context — clears globals, reloads built-ins, etc.
 	 * Useful if you want to run multiple scripts in the same process without
 	 * them interfering with each other via globals.
 	 * Note: doesn't reset registered natives since those are meant to be shared.
 	**/
-
 	/**
 	 * Reset interpreter state while preserving static globals and class registrations.
 	 *
@@ -905,7 +968,8 @@ class Interpreter {
 		for (name in savedClasses.keys()) {
 			vm.globals.set(name, savedClasses.get(name));
 			switch (savedClasses.get(name)) {
-				case VClass(cd): vm.classes.set(name, cd);
+				case VClass(cd):
+					vm.classes.set(name, cd);
 				default:
 			}
 		}
@@ -922,7 +986,7 @@ class Interpreter {
 	 *   // or just: new Enemy() from any other script
 	 */
 	public function loadScript(path:String):Value {
-		#if sys 
+		#if sys
 		var source = sys.io.File.getContent(path);
 		run(source, path);
 		// Return a VDict of all non-native globals defined by this script
@@ -931,11 +995,12 @@ class Interpreter {
 			var v = vm.globals.get(name);
 			switch (v) {
 				case VNativeFunction(_, _, _): // skip builtins
-				default: exports.set(name, v);
+				default:
+					exports.set(name, v);
 			}
 		}
 		return VDict(exports);
-		#else 
+		#else
 		return VNull;
 		#end
 	}
@@ -958,7 +1023,8 @@ class Interpreter {
 		for (file in files) {
 			var fullPath = (dir.endsWith("/") ? dir : dir + "/") + file;
 			if (sys.FileSystem.isDirectory(fullPath)) {
-				if (recursive) loadScripts(fullPath, true);
+				if (recursive)
+					loadScripts(fullPath, true);
 			} else if (file.endsWith(".nx")) {
 				try {
 					loadScript(fullPath);
@@ -968,7 +1034,7 @@ class Interpreter {
 			}
 		}
 		#else
-			trace('[NXScript] loadScripts: we cant use Sys!');
+		trace('[NXScript] loadScripts: we cant use Sys!');
 		#end
 	}
 
@@ -977,7 +1043,6 @@ class Interpreter {
 	 * Makes testing easier: `runDynamic("1 + 2") == 3`
 	 */
 	public function runDynamic(source:String, ?scriptName:String = "script"):Dynamic {
-
 		var result = run(source, scriptName);
 		return vm.valueToHaxe(result);
 	}
@@ -1005,20 +1070,9 @@ class Interpreter {
 	public function compile(source:String, ?scriptName:String = "script"):Chunk {
 		var prepared = preprocessImports(source, scriptName);
 		var scriptSource = prepared.source;
-		var trimmed = StringTools.trim(scriptSource);
-		var strictFromPragma = StringTools.startsWith(trimmed, '"use strict";')
-			|| StringTools.startsWith(trimmed, "'use strict';")
-			|| StringTools.startsWith(trimmed, '"use strict"')
-			|| StringTools.startsWith(trimmed, "'use strict'");
-		var strictMode = strictByDefault || strictFromPragma;
+		var strictMode = computeStrictMode(scriptSource);
 
-		// Tokenize
-		var tokenizer = new Tokenizer(scriptSource, rules);
-		var tokens = tokenizer.tokenize();
-
-		// Parse
-		var parser = new Parser(tokens, strictMode, rules);
-		var ast = parser.parse();
+		var ast = parser.parse(scriptSource, strictMode);
 
 		// Compile to bytecode
 		var compiler = new Compiler();
@@ -1113,11 +1167,58 @@ class Interpreter {
 		return vm.callMethod(name, args);
 	}
 
+	/** Fast path by compiled global ID. */
+	public function callId(id:Int, ?args:Array<Value>):Value {
+		return vm.callMethodId(id, args != null ? args : EMPTY_ARGS);
+	}
+
+	/** Get global value by compiled ID. */
+	public function getId(id:Int):Value {
+		return vm.getById(id);
+	}
+
+	/** Alias for getId. */
+	public inline function getById(id:Int):Value
+		return getId(id);
+
+	/** Set global value by compiled ID. */
+	public function setId(id:Int, value:Value):Void {
+		vm.setById(id, value);
+	}
+
+	/** Alias for setId. */
+	public inline function setById(id:Int, value:Value):Void
+		setId(id, value);
+
+	/** Resolve global ID by name, returns -1 if not compiled/bound. */
+	public function globalId(name:String):Int {
+		return vm.getGlobalId(name);
+	}
+
+	/** Resolve member ID by name, interns if missing. */
+	public function memberId(name:String):Int {
+		return vm.getMemberId(name);
+	}
+
+	/** Get object member by member ID. */
+	public function getMemberById(object:Value, memberId:Int):Value {
+		return vm.getMemberById(object, memberId);
+	}
+
+	/** Set object member by member ID. */
+	public function setMemberById(object:Value, memberId:Int, value:Value):Void {
+		vm.setMemberById(object, memberId, value);
+	}
+
+	/** Call object member by member ID. */
+	public function callMemberById(object:Value, memberId:Int, args:Array<Value>):Value {
+		return vm.callMemberById(object, memberId, args);
+	}
+
 	/** Fast path for calling zero-argument functions without allocating [] every call. */
 	public inline function call0(name:String):Value {
 		return vm.callMethod(name, EMPTY_ARGS);
 	}
-
 
 	/** Call a resolved callable with custom arguments. */
 	public inline function callResolved(callee:Value, args:Array<Value>):Value {
@@ -1132,6 +1233,72 @@ class Interpreter {
 	@:deprecated("Use 'call' instead")
 	public inline function callFunction(name:String, args:Array<Value>):Value
 		return call(name, args);
+
+	/** Resolve a named function and wrap it as NxCallable. */
+	public inline function callable(name:String):NxCallable {
+		return new NxCallable(this, vm.resolveCallable(name));
+	}
+
+	/** Wrap a compiled global ID as NxCallable. */
+	public inline function callableId(id:Int):NxCallable {
+		return new NxCallable(this, vm.getById(id));
+	}
+
+	/** Wrap a script value as NxObject for member get/set/call ergonomics. */
+	public inline function object(value:Value):NxObject {
+		return new NxObject(this, value);
+	}
+
+	/** Wrap global by ID as NxObject. */
+	public inline function objectId(id:Int):NxObject {
+		return new NxObject(this, vm.getById(id));
+	}
+
+	/** Wrap native value preserving static type as NxNative<T>. */
+	public inline function native<T>(value:T):NxNative<T> {
+		return new NxNative(value);
+	}
+
+	/** Convert script value to NxNumber wrapper when possible. */
+	public function number(value:Value):NxNumber {
+		return switch (value) {
+			case VNumber(n): new NxNumber(n, this, value);
+			default: throw 'Expected Number value';
+		};
+	}
+
+	/** Convert script value to NxInt wrapper when possible. */
+	public function int(value:Value):NxInt {
+		return switch (value) {
+			case VNumber(n): new NxInt(Std.int(n), this, value);
+			default: throw 'Expected Number value';
+		};
+	}
+
+	/** Convert script value to NxFloat wrapper when possible. */
+	public function float(value:Value):NxFloat {
+		return switch (value) {
+			case VNumber(n): new NxFloat(n, this, value);
+			default: throw 'Expected Number value';
+		};
+	}
+
+	/** Convert script value to NxString wrapper when possible. */
+	public function string(value:Value):NxString {
+		return switch (value) {
+			case VString(s): new NxString(s, this, value);
+			default: throw 'Expected String value';
+		};
+	}
+
+	inline function computeStrictMode(scriptSource:String):Bool {
+		var trimmed = StringTools.trim(scriptSource);
+		var strictFromPragma = StringTools.startsWith(trimmed, '"use strict";')
+			|| StringTools.startsWith(trimmed, "'use strict';")
+			|| StringTools.startsWith(trimmed, '"use strict"')
+			|| StringTools.startsWith(trimmed, "'use strict'");
+		return strictByDefault || strictFromPragma;
+	}
 
 	/**
 	 * Create a type-safe instance of a script class

@@ -1,9 +1,5 @@
--cp src/
--xml doc.xml
--neko doc.n
---library prismcli
+-cp src
+-cp docs/haxe_stubs
+-main nx.binding.NxBinding
+-xml docs/api.xml
 --no-output
-
---macro include('nx')
-
---c-arg arg

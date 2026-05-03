@@ -87,6 +87,7 @@ else doOther()
 while (i < 10) i++
 
 for (item in array) trace(item)
+for (i in 0...10) trace(i)
 for (i from 0 to 10) trace(i)
 ```
 
@@ -397,31 +398,33 @@ interp.enableSandbox(["DangerousClass"]);  // also block custom names
 
 ---
 
-## syntax rules
+## parser frontends
 
-Customize keyword and operator spelling per interpreter:
-
-```haxe
-import nx.script.SyntaxRules;
-
-var rules = new SyntaxRules();
-rules.addKeywordAlias("fn",  "func");   // fn x() {}
-rules.addKeywordAlias("let", "var");    // let x = 1
-rules.addOperatorAlias("not", "!");     // not true
-rules.addOperatorAlias("and", "&&");    // x and y
-rules.addOperatorAlias("or",  "||");    // x or y
-
-var interp = new Interpreter(false, false, rules);
-```
-
-### presets
+NxScript now uses explicit parser frontends under `nx.script.parsers`:
 
 ```haxe
-SyntaxRules.nxScript()   // default — all features on
-SyntaxRules.pythonish()  // def, not/and/or, True/False/None
-SyntaxRules.minimal()    // no lambdas, no templates, no braceless
-SyntaxRules.haxeStyle()  // function keyword, etc.
+import nx.script.Interpreter;
+import nx.script.parsers.NxScriptParser;
+import nx.script.parsers.HaxeScriptParser;
+
+var nx = new Interpreter();
+nx.parser = new NxScriptParser();
+
+var hx = new Interpreter();
+hx.parser = new HaxeScriptParser();
 ```
+
+Current switch policy:
+
+```nx
+switch (x) {
+    case 1, 2: "one or two"
+    case 3 | 4: "three or four"
+    default: "other"
+}
+```
+
+`switch case ... => ...` is intentionally rejected.
 
 ---
 
@@ -464,10 +467,14 @@ src/nx/
 │   ├── Compiler.hx        # AST → bytecode
 │   ├── Parser.hx          # tokens → AST
 │   ├── Tokenizer.hx       # source → tokens
+│   ├── parsers/
+│   │   ├── IScriptParser.hx
+│   │   ├── NxScriptParser.hx
+│   │   ├── HaxeScriptParser.hx
+│   │   └── HaxeScriptTokenizer.hx
 │   ├── Bytecode.hx        # opcodes + Value enum
 │   ├── Token.hx           # token types
 │   ├── AST.hx             # expression/statement nodes
-│   ├── SyntaxRules.hx     # configurable syntax aliases
 │   ├── NativeClasses.hx   # built-in methods
 │   ├── NxProxy.hx         # script class → Haxe proxy
 │   └── NativeProxy.hx     # Haxe object → shadow map
@@ -485,7 +492,43 @@ cd test/tests
 haxelib run nxscript test
 ```
 
-195 tests, 0 failing.
+Main parser-focused runners:
+
+```bash
+cd test/tests
+haxe haxeparser.hxml
+haxe switchcases.hxml
+```
+
+For the broader suite, run:
+
+```bash
+cd test/tests
+haxe test_suite.hxml
+```
+
+## api docs
+
+Build the handmade docs site (API XML + browser sandbox):
+
+```bash
+pwsh -ExecutionPolicy Bypass -File docs/build-docs.ps1
+```
+
+Serve `docs/` locally:
+
+```bash
+cd docs
+python -m http.server 5500
+```
+
+Manual API XML generation only:
+
+```bash
+haxe doc.hxml
+```
+
+This writes `docs/api.xml`.
 
 ---
 

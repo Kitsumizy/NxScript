@@ -22,7 +22,13 @@ class Reflection {
 	 */
 	public static inline function getField(obj:Dynamic, field:String):Dynamic {
 		#if cpp
-		return untyped __cpp__("({0})->__Field({1}, hx::paccAlways)", obj, field);
+		var v:Dynamic = untyped __cpp__("({0})->__Field({1}, hx::paccAlways)", obj, field);
+		// Some typed cpp fields can come back as false in paccAlways mode.
+		if (v == false)
+			v = untyped __cpp__("({0})->__Field({1}, hx::paccDynamic)", obj, field);
+		if (v == false)
+			v = untyped __cpp__("({0})->__Field({1}, hx::paccNever)", obj, field);
+		return v;
 		#else
 		var v = Reflect.getProperty(obj, field);
 		return v != null ? v : Reflect.field(obj, field);
@@ -72,7 +78,8 @@ class Reflection {
 	 */
 	public static inline function isFunction(v:Dynamic):Bool {
 		#if cpp
-		if (v == null || v == false || v == true) return false;
+		if (v == null || v == false || v == true)
+			return false;
 		return untyped __cpp__("{0}.mPtr && {0}.mPtr->__GetType() == 2", v);
 		#else
 		return Reflect.isFunction(v);

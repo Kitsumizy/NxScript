@@ -15,12 +15,10 @@ class Parser {
 	var pos:Int = 0;
 	var strictSemicolons:Bool;
 	var syntheticCounter:Int = 0;
-	var rules:SyntaxRules = null;
 
-	public function new(tokens:Array<TokenPos>, strictSemicolons:Bool = false, ?rules:SyntaxRules) {
+	public function new(tokens:Array<TokenPos>, strictSemicolons:Bool = false) {
 		this.tokens = tokens;
 		this.strictSemicolons = strictSemicolons;
-		this.rules = rules;
 	}
 
 	public function parse():Array<StmtWithPos> {
@@ -60,7 +58,7 @@ class Parser {
 			case TKeyword(KContinue): {advance(); SContinue;}
 			case TKeyword(KTry): parseTryCatch();
 			case TKeyword(KThrow): parseThrow();
-			case TKeyword(KMatch): parseMatch();
+			case TKeyword(KMatch), TKeyword(KSwitch): parseMatch();
 			case TKeyword(KUsing): parseUsing();
 			case TKeyword(KEnum): parseEnum();
 			case TKeyword(KAbstract): parseAbstract();
@@ -73,26 +71,34 @@ class Parser {
 	function parseLet():Stmt {
 		advance(); // consume 'let'
 		// Destructure: let [a, b] = expr  or  let {x, y} = expr
-		if (check(TLeftBracket)) return parseDestructureArray(false);
-		if (check(TLeftBrace))   return parseDestructureDict(false);
+		if (check(TLeftBracket))
+			return parseDestructureArray(false);
+		if (check(TLeftBrace))
+			return parseDestructureDict(false);
 		var name = expectIdentifier();
 		var type = null;
-		if (match(TColon)) type = parseTypeHint();
+		if (match(TColon))
+			type = parseTypeHint();
 		var init = null;
-		if (match(TOperator(OAssign))) init = parseExpression();
+		if (match(TOperator(OAssign)))
+			init = parseExpression();
 		return SLet(name, type, init);
 	}
 
 	function parseVar():Stmt {
 		advance(); // consume 'var'
 		// Destructure: var [a, b] = expr  or  var {x, y} = expr
-		if (check(TLeftBracket)) return parseDestructureArray(true);
-		if (check(TLeftBrace))   return parseDestructureDict(true);
+		if (check(TLeftBracket))
+			return parseDestructureArray(true);
+		if (check(TLeftBrace))
+			return parseDestructureDict(true);
 		var name = expectIdentifier();
 		var type = null;
-		if (match(TColon)) type = parseTypeHint();
+		if (match(TColon))
+			type = parseTypeHint();
 		var init = null;
-		if (match(TOperator(OAssign))) init = parseExpression();
+		if (match(TOperator(OAssign)))
+			init = parseExpression();
 		return SVar(name, type, init);
 	}
 
@@ -102,12 +108,17 @@ class Parser {
 		skipNewlines();
 		while (!check(TRightBracket) && !isEOF()) {
 			skipNewlines();
-			if (check(TRightBracket)) break;
+			if (check(TRightBracket))
+				break;
 			// _ means skip this element
-			if (check(TIdentifier("_"))) { advance(); names.push(null); }
-			else names.push(expectIdentifier());
+			if (check(TIdentifier("_"))) {
+				advance();
+				names.push(null);
+			} else
+				names.push(expectIdentifier());
 			skipNewlines();
-			if (!match(TComma)) break;
+			if (!match(TComma))
+				break;
 		}
 		expect(TRightBracket, "Expected ']' in array destructure");
 		expect(TOperator(OAssign), "Expected '=' in destructure declaration");
@@ -121,10 +132,12 @@ class Parser {
 		skipNewlines();
 		while (!check(TRightBrace) && !isEOF()) {
 			skipNewlines();
-			if (check(TRightBrace)) break;
+			if (check(TRightBrace))
+				break;
 			names.push(expectIdentifier());
 			skipNewlines();
-			if (!match(TComma)) break;
+			if (!match(TComma))
+				break;
 		}
 		expect(TRightBrace, "Expected '}' in dict destructure");
 		expect(TOperator(OAssign), "Expected '=' in destructure declaration");
@@ -187,6 +200,15 @@ class Parser {
 		while (!check(TRightBrace) && !isEOF()) {
 			var token = peek();
 
+			// Placeholder access modifiers: parse and ignore for now.
+			switch (token.token) {
+				case TKeyword(KPublic), TKeyword(KPrivate):
+					advance();
+					skipNewlines();
+					token = peek();
+				default:
+			}
+
 			switch (token.token) {
 				case TKeyword(KVar):
 					// Field declaration
@@ -209,7 +231,8 @@ class Parser {
 						init: fieldInit
 					});
 
-				case TKeyword(KFunc), TKeyword(KFn), TKeyword(KFun), TKeyword(KFunction):
+				case TKeyword(KFunc), TKeyword(KFn), TKeyword(KFun), TKeyword(KFunction), TIdentifier("func"), TIdentifier("fn"), TIdentifier("fun"),
+					TIdentifier("function"):
 					// Method declaration
 					advance(); // consume 'func'
 
@@ -249,7 +272,43 @@ class Parser {
 						params: params,
 						returnType: returnType,
 						body: body,
-						isConstructor: isConstructor
+						isConstructor: isConstructor,
+						isOverride: false
+					});
+
+				case TKeyword(KOverride), TIdentifier("override"):
+					// Explicit method override: override func foo(...) { ... }
+					advance(); // consume 'override'
+					skipNewlines();
+					if (!(match(TKeyword(KFunc)) || match(TKeyword(KFn)) || match(TKeyword(KFun)) || match(TKeyword(KFunction))
+						|| match(TIdentifier("func")) || match(TIdentifier("fn")) || match(TIdentifier("fun")) || match(TIdentifier("function")))) {
+						error("Expected 'func' after 'override' in class body");
+					}
+
+					var overrideName = expectMemberName();
+					if (overrideName == "new")
+						error("Constructors cannot be marked as override");
+
+					expect(TLeftParen, "Expected '(' after method name");
+					var overrideParams = parseParameters();
+					expect(TRightParen, "Expected ')' after parameters");
+
+					var overrideReturnType:Null<TypeHint> = null;
+					if (match(TArrow) || match(TColon))
+						overrideReturnType = parseTypeHint();
+
+					skipNewlines();
+					expect(TLeftBrace, "Expected '{' before method body");
+					var overrideBody = parseBlockBody();
+					expect(TRightBrace, "Expected '}' after method body");
+
+					methods.push({
+						name: overrideName,
+						params: overrideParams,
+						returnType: overrideReturnType,
+						body: overrideBody,
+						isConstructor: false,
+						isOverride: true
 					});
 
 				case TKeyword(KStatic):
@@ -258,27 +317,43 @@ class Parser {
 					skipNewlines();
 					if (match(TKeyword(KVar))) {
 						var fieldName = expectIdentifier();
-						if (match(TColon)) parseTypeHint();
+						if (match(TColon))
+							parseTypeHint();
 						var fieldInit:Null<Expr> = null;
-						if (match(TOperator(OAssign))) fieldInit = parseExpression();
-						fields.push({ name: fieldName, type: null, init: fieldInit, isStatic: true });
-					} else if (match(TKeyword(KFunc)) || match(TKeyword(KFunction)) || match(TKeyword(KFn)) || match(TKeyword(KFun))) {
+						if (match(TOperator(OAssign)))
+							fieldInit = parseExpression();
+						fields.push({
+							name: fieldName,
+							type: null,
+							init: fieldInit,
+							isStatic: true
+						});
+					} else if (match(TKeyword(KFunc)) || match(TKeyword(KFunction)) || match(TKeyword(KFn)) || match(TKeyword(KFun))
+						|| match(TIdentifier("func")) || match(TIdentifier("function")) || match(TIdentifier("fn")) || match(TIdentifier("fun"))) {
 						var methodName = expectMemberName();
 						expect(TLeftParen, "Expected '(' after static method name");
 						var params = parseParameters();
 						expect(TRightParen, "Expected ')' after static method params");
-						if (match(TArrow) || match(TColon)) parseTypeHint();
+						if (match(TArrow) || match(TColon))
+							parseTypeHint();
 						skipNewlines();
 						expect(TLeftBrace, "Expected '{' before static method body");
 						var body = parseBlockBody();
 						expect(TRightBrace, "Expected '}' after static method body");
-						methods.push({ name: methodName, params: params, returnType: null, body: body, isConstructor: false, isStatic: true });
+						methods.push({
+							name: methodName,
+							params: params,
+							returnType: null,
+							body: body,
+							isConstructor: false,
+							isStatic: true
+						});
 					} else {
 						error("Expected 'var' or 'func' after 'static' in class body");
 					}
 
 				default:
-					error("Expected 'var', 'func', or 'static' in class body");
+					error("Expected 'var', 'func', 'override', 'public', 'private', or 'static' in class body");
 			}
 
 			skipSeparators();
@@ -329,8 +404,23 @@ class Parser {
 				TArray(elementType);
 			case TIdentifier(name):
 				advance();
-				// Soporte para clases externas (FlxSound, etc)
-				TCustom(name);
+				// Accept generic type hints like Array<FlxSound>.
+				if (match(TOperator(OLess))) {
+					var genericArgs:Array<TypeHint> = [];
+					genericArgs.push(parseTypeHint());
+					while (match(TComma)) {
+						genericArgs.push(parseTypeHint());
+					}
+					expect(TOperator(OGreater), "Expected '>' after generic type arguments");
+
+					if (name == "Array" && genericArgs.length == 1)
+						TArray(genericArgs[0]);
+					else
+						TCustom(name);
+				} else {
+					// Soporte para clases externas (FlxSound, etc)
+					TCustom(name);
+				}
 			default:
 				throw 'Expected type hint at line ${token.line}, col ${token.col}';
 		}
@@ -513,7 +603,8 @@ class Parser {
 	// ?? has lower precedence than || but higher than assignment
 	function parseTernary():Expr {
 		var cond = parseNullCoal();
-		if (!match(TQuestion)) return cond;
+		if (!match(TQuestion))
+			return cond;
 		var then = parseExpression();
 		expect(TColon, "Expected ':' in ternary expression");
 		var els = parseExpression();
@@ -813,6 +904,9 @@ class Parser {
 		var token = peek();
 
 		return switch (token.token) {
+			case TKeyword(KMatch), TKeyword(KSwitch):
+				parseMatchExpression();
+
 			case TNumber(v):
 				advance();
 				ENumber(v);
@@ -832,6 +926,12 @@ class Parser {
 			case TKeyword(KThis):
 				advance();
 				EThis;
+
+			case TKeyword(KSuper):
+				advance();
+				// Keep super as an explicit keyword but map to identifier-based lookup
+				// so existing compiler/VM closure binding (`super`) continues to work.
+				EIdentifier("super");
 
 			case TKeyword(KNew):
 				advance();
@@ -911,6 +1011,58 @@ class Parser {
 		}
 	}
 
+	function parseMatchExpression():Expr {
+		var startTok = peek().token;
+		var isSwitch = switch (startTok) {
+			case TKeyword(KSwitch): true;
+			default: false;
+		};
+		advance(); // consume 'match' or 'switch'
+		var subject = parseExpression();
+		expect(TLeftBrace, isSwitch ? "Expected '{' after switch expression" : "Expected '{' after match expression");
+		skipSeparators();
+
+		var cases:Array<MatchCase> = [];
+		var defaultBody:Null<Array<Stmt>> = null;
+
+		while (!check(TRightBrace) && !isEOF()) {
+			skipSeparators();
+			if (check(TRightBrace))
+				break;
+
+			if (match(TKeyword(KDefault))) {
+				if (isSwitch) {
+					expect(TColon, 'Expected ":" after "default" at line ${peek().line}');
+					defaultBody = parseSwitchCaseBody();
+				} else {
+					if (!match(TArrow) && !match(TFatArrow))
+						throw 'Expected "=>" after "default" at line ${peek().line}';
+					defaultBody = parseMatchBody();
+				}
+			} else {
+				expect(TKeyword(KCase), "Expected 'case' in match block");
+				if (isSwitch) {
+					var patterns = parseSwitchCasePatterns();
+					expect(TColon, 'Expected ":" after case pattern at line ${peek().line}');
+					var body = parseSwitchCaseBody();
+					for (pattern in patterns) {
+						cases.push({pattern: pattern, body: body.copy()});
+					}
+				} else {
+					var pattern = parseMatchPattern();
+					if (!match(TArrow) && !match(TFatArrow))
+						throw 'Expected "=>" after case pattern at line ${peek().line}';
+					var body = parseMatchBody();
+					cases.push({pattern: pattern, body: body});
+				}
+			}
+			skipSeparators();
+		}
+
+		expect(TRightBrace, "Expected '}' after match block");
+		return EMatchExpr(subject, cases, defaultBody);
+	}
+
 	function parseLambda():Expr {
 		expect(TLeftParen, "Expected '(' for lambda");
 		var params = parseParameters();
@@ -961,7 +1113,18 @@ class Parser {
 				// Allow trailing comma before }
 				if (check(TRightBrace))
 					break;
-				var key = parseExpression();
+				var key = switch (peek().token) {
+					case TIdentifier(name):
+						// Object-like dict keys: { foo: 1 } => key "foo"
+						if (pos + 1 < tokens.length && Type.enumEq(tokens[pos + 1].token, TColon)) {
+							advance();
+							EString(name);
+						} else {
+							parseExpression();
+						}
+					default:
+						parseExpression();
+				};
 				expect(TColon, "Expected ':' after dictionary key");
 				var value = parseExpression();
 				pairs.push({key: key, value: value});
@@ -974,9 +1137,14 @@ class Parser {
 	}
 
 	function parseMatch():Stmt {
-		advance(); // consume 'match'
+		var startTok = peek().token;
+		var isSwitch = switch (startTok) {
+			case TKeyword(KSwitch): true;
+			default: false;
+		};
+		advance(); // consume 'match' or 'switch'
 		var subject = parseExpression();
-		expect(TLeftBrace, "Expected '{' after match expression");
+		expect(TLeftBrace, isSwitch ? "Expected '{' after switch expression" : "Expected '{' after match expression");
 		skipSeparators();
 
 		var cases:Array<MatchCase> = [];
@@ -984,26 +1152,86 @@ class Parser {
 
 		while (!check(TRightBrace) && !isEOF()) {
 			skipSeparators();
-			if (check(TRightBrace)) break;
+			if (check(TRightBrace))
+				break;
 
 			if (match(TKeyword(KDefault))) {
-				// default => body
-				if (!match(TArrow) && !match(TFatArrow))
-					throw 'Expected "=>" after "default" at line ${peek().line}';
-				defaultBody = parseMatchBody();
+				if (isSwitch) {
+					expect(TColon, 'Expected ":" after "default" at line ${peek().line}');
+					defaultBody = parseSwitchCaseBody();
+				} else {
+					// default => body
+					if (!match(TArrow) && !match(TFatArrow))
+						throw 'Expected "=>" after "default" at line ${peek().line}';
+					defaultBody = parseMatchBody();
+				}
 			} else {
 				expect(TKeyword(KCase), "Expected 'case' in match block");
-				var pattern = parseMatchPattern();
-				if (!match(TArrow) && !match(TFatArrow))
-					throw 'Expected "=>" after case pattern at line ${peek().line}';
-				var body = parseMatchBody();
-				cases.push({ pattern: pattern, body: body });
+				if (isSwitch) {
+					var patterns = parseSwitchCasePatterns();
+					expect(TColon, 'Expected ":" after case pattern at line ${peek().line}');
+					var body = parseSwitchCaseBody();
+					for (pattern in patterns) {
+						cases.push({pattern: pattern, body: body.copy()});
+					}
+				} else {
+					var pattern = parseMatchPattern();
+					if (!match(TArrow) && !match(TFatArrow))
+						throw 'Expected "=>" after case pattern at line ${peek().line}';
+					var body = parseMatchBody();
+					cases.push({pattern: pattern, body: body});
+				}
 			}
 			skipSeparators();
 		}
 
 		expect(TRightBrace, "Expected '}' after match block");
 		return SMatch(subject, cases, defaultBody);
+	}
+
+	function parseSwitchCasePatterns():Array<MatchPattern> {
+		var patterns:Array<MatchPattern> = [parseMatchPattern()];
+		while (true) {
+			skipNewlines();
+			if (match(TComma) || match(TOperator(OBitOr))) {
+				patterns.push(parseMatchPattern());
+			} else {
+				break;
+			}
+		}
+		return patterns;
+	}
+
+	function parseSwitchCaseBody():Array<Stmt> {
+		skipSeparators();
+		var body:Array<Stmt> = [];
+		while (!isEOF() && !check(TRightBrace) && !check(TKeyword(KCase)) && !check(TKeyword(KDefault))) {
+			var stmt = parseStatement();
+			consumeStatementTerminator(stmt);
+			body.push(stmt);
+			skipSeparators();
+		}
+		return body;
+	}
+
+	function parseEnumPatternBinds():Array<Null<String>> {
+		var binds:Array<Null<String>> = [];
+		if (!check(TRightParen)) {
+			do {
+				skipNewlines();
+				if (check(TRightParen))
+					break;
+				if (check(TIdentifier("_"))) {
+					advance();
+					binds.push(null);
+				} else {
+					binds.push(expectIdentifier());
+				}
+				skipNewlines();
+			} while (match(TComma));
+		}
+		expect(TRightParen, "Expected ')' after enum pattern");
+		return binds;
 	}
 
 	function parseMatchPattern():MatchPattern {
@@ -1028,21 +1256,20 @@ class Parser {
 			// Type name, enum variant, or bind variable
 			case TIdentifier(name):
 				advance();
+				// Qualified enum variant: EnumName.Variant or EnumName.Variant(payload)
+				if (match(TDot)) {
+					var variantName = expectIdentifier();
+					if (check(TLeftParen)) {
+						advance();
+						MPEnum(variantName, parseEnumPatternBinds());
+					} else {
+						MPEnum(variantName, []);
+					}
+				} else
 				// Enum variant with payload binds: case Ok(msg) or case Error(code, _)
 				if (check(TLeftParen)) {
 					advance();
-					var binds:Array<Null<String>> = [];
-					if (!check(TRightParen)) {
-						do {
-							skipNewlines();
-							if (check(TRightParen)) break;
-							if (check(TIdentifier("_"))) { advance(); binds.push(null); }
-							else binds.push(expectIdentifier());
-							skipNewlines();
-						} while (match(TComma));
-					}
-					expect(TRightParen, "Expected ')' after enum pattern");
-					MPEnum(name, binds);
+					MPEnum(name, parseEnumPatternBinds());
 				} else {
 					switch (name) {
 						case "String" | "Number" | "Bool" | "Null" | "Array" | "Dict" | "Function" | "Int" | "Float":
@@ -1053,7 +1280,7 @@ class Parser {
 							if (firstChar >= "A" && firstChar <= "Z")
 								MPEnum(name, []); // e.g. Red, Green, Ok
 							else
-								MPBind(name);    // e.g. n, x, value
+								MPBind(name); // e.g. n, x, value
 					}
 				}
 			// Array destructure: [x, y]
@@ -1063,7 +1290,8 @@ class Parser {
 				if (!check(TRightBracket)) {
 					do {
 						skipNewlines();
-						if (check(TRightBracket)) break;
+						if (check(TRightBracket))
+							break;
 						elements.push(parseExpression());
 						skipNewlines();
 					} while (match(TComma));
@@ -1095,7 +1323,8 @@ class Parser {
 		if (match(TKeyword(KVar))) {
 			var name = expectIdentifier();
 			// optional type hint
-			if (match(TColon)) parseTypeHint();
+			if (match(TColon))
+				parseTypeHint();
 			var init:Null<Expr> = null;
 			if (match(TOperator(OAssign)))
 				init = parseExpression();
@@ -1107,7 +1336,8 @@ class Parser {
 			expect(TLeftParen, "Expected '(' after static function name");
 			var params = parseParameters();
 			expect(TRightParen, "Expected ')' after static function params");
-			if (match(TArrow) || match(TColon)) parseTypeHint();
+			if (match(TArrow) || match(TColon))
+				parseTypeHint();
 			skipNewlines();
 			expect(TLeftBrace, "Expected '{' before static function body");
 			var body = parseBlockBody();
@@ -1127,7 +1357,8 @@ class Parser {
 		var variants:Array<EnumVariant> = [];
 		while (!check(TRightBrace) && !isEOF()) {
 			skipSeparators();
-			if (check(TRightBrace)) break;
+			if (check(TRightBrace))
+				break;
 			var vname = expectIdentifier();
 			var fields:Array<Param> = [];
 			if (match(TLeftParen)) {
@@ -1135,7 +1366,7 @@ class Parser {
 				fields = parseParameters();
 				expect(TRightParen, "Expected ')' after enum variant fields");
 			}
-			variants.push({ name: vname, fields: fields });
+			variants.push({name: vname, fields: fields});
 			skipSeparators();
 			match(TComma); // optional comma between variants
 			skipSeparators();
@@ -1162,7 +1393,8 @@ class Parser {
 		var methods:Array<ClassMethod> = [];
 		while (!check(TRightBrace) && !isEOF()) {
 			skipSeparators();
-			if (check(TRightBrace)) break;
+			if (check(TRightBrace))
+				break;
 			// Parse method like class methods
 			var tok = peek();
 			if (!check(TKeyword(KFunc)) && !check(TKeyword(KFn)) && !check(TKeyword(KFun)) && !check(TKeyword(KFunction)))
@@ -1173,11 +1405,19 @@ class Parser {
 			var params = parseParameters();
 			expect(TRightParen, "Expected ')' after method params");
 			var retType = null;
-			if (match(TArrow) || match(TColon)) retType = parseTypeHint();
+			if (match(TArrow) || match(TColon))
+				retType = parseTypeHint();
 			expect(TLeftBrace, "Expected '{' before method body");
 			var body = parseBlockBody();
 			expect(TRightBrace, "Expected '}' after method body");
-			methods.push({ name: mname, params: params, returnType: retType, body: body, isConstructor: mname == "new" });
+			methods.push({
+				name: mname,
+				params: params,
+				returnType: retType,
+				body: body,
+				isConstructor: mname == "new",
+				isOverride: false
+			});
 			skipSeparators();
 		}
 		expect(TRightBrace, "Expected '}' after abstract body");

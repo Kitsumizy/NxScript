@@ -62,13 +62,13 @@ class Op {
 	public static inline var RETURN = 0x61; // Return from function
 	public static inline var MAKE_FUNC = 0x62; // Create function object
 	public static inline var MAKE_LAMBDA = 0x63; // Create lambda function
-	public static inline var CALL_MEMBER = 0x64; // Call object member with packed field index + arg count
+	public static inline var CALL_MEMBER = 0x64; // Call object member with packed member-id + arg count
 
 	// Data structures (0x70 - 0x7F)
 	public static inline var MAKE_ARRAY = 0x70; // Create array from top n stack items
 	public static inline var MAKE_DICT = 0x71; // Create dict from top 2n stack items
-	public static inline var GET_MEMBER = 0x72; // Get object member
-	public static inline var SET_MEMBER = 0x73; // Set object member
+	public static inline var GET_MEMBER = 0x72; // Get object member by member-id
+	public static inline var SET_MEMBER = 0x73; // Set object member by member-id
 	public static inline var GET_INDEX = 0x74; // Get indexed value
 	public static inline var SET_INDEX = 0x75; // Set indexed value
 	public static inline var MAKE_CLASS = 0x76; // Create a class
@@ -79,6 +79,7 @@ class Op {
 	// Iterations (0x80 - 0x8F)
 	public static inline var GET_ITER = 0x80; // Get iterator from iterable
 	public static inline var FOR_ITER = 0x81; // Iterate or jump if done
+
 	/**
 	 * FOR_RANGE — tight integer range loop, zero Map/constVars overhead.
 	 * Uses two opcodes emitted back to back:
@@ -90,7 +91,8 @@ class Op {
 	 * Otherwise fall through.
 	 */
 	public static inline var FOR_RANGE_SETUP = 0x83; // arg = varSlot | (endSlot << 16)
-	public static inline var FOR_RANGE = 0x82;       // arg = jumpOffset (instructions)
+
+	public static inline var FOR_RANGE = 0x82; // arg = jumpOffset (instructions)
 
 	// Special (0x90 - 0x9F)
 	public static inline var LOAD_NULL = 0x90;
@@ -107,7 +109,7 @@ class Op {
 	public static inline var DEC_LOCAL = 0xC1; // local[arg]-- (returns old)
 	public static inline var INC_GLOBAL = 0xC2; // global[arg]++
 	public static inline var DEC_GLOBAL = 0xC3; // global[arg]--
-	public static inline var INC_MEMBER = 0xC4; // obj.field++ (obj on stack, field in strings[arg])
+	public static inline var INC_MEMBER = 0xC4; // obj.field++ (obj on stack, field in memberNames[arg])
 	public static inline var DEC_MEMBER = 0xC5; // obj.field--
 	public static inline var INC_INDEX = 0xC6; // obj[idx]++ (obj, idx on stack)
 	public static inline var DEC_INDEX = 0xC7; // obj[idx]--
@@ -115,7 +117,7 @@ class Op {
 	// Scope management for block-level let declarations
 	public static inline var REGISTER_USING = 0xCF; // arg = string index of class name
 	public static inline var ENTER_SCOPE = 0xD0; // push a new scope frame onto scopeStack
-	public static inline var EXIT_SCOPE  = 0xD1; // pop scope frame, removing its let vars
+	public static inline var EXIT_SCOPE = 0xD1; // pop scope frame, removing its let vars
 
 	// End of file (0xFF)
 	public static inline var EOF = 0xFF;
@@ -198,7 +200,7 @@ class Op {
 			case DEC_MEMBER: "DEC_MEMBER";
 			case INC_INDEX: "INC_INDEX";
 			case DEC_INDEX: "DEC_INDEX";
-				case REGISTER_USING: "REGISTER_USING";
+			case REGISTER_USING: "REGISTER_USING";
 			case ENTER_SCOPE: "ENTER_SCOPE";
 			case EXIT_SCOPE: "EXIT_SCOPE";
 			case EOF: "EOF";
@@ -232,6 +234,7 @@ class Chunk {
 	public var constants:Array<Value> = [];
 	public var functions:Array<FunctionChunk> = [];
 	public var strings:Array<String> = [];
+	public var memberNames:Array<String> = [];
 	public var globalNames:Array<String> = [];
 	public var globalConstMask:Array<Bool> = [];
 	@:optional public var code:Array<Int> = null;
@@ -257,10 +260,11 @@ typedef ClassData = {
 	superClass:Null<String>,
 	nativeSuper:Null<Value>,
 	methods:Map<String, FunctionChunk>,
-	fields:Map<String, Value>,          // Default instance field values
+	fields:Map<String, Value>, // Default instance field values
 	constructor:Null<FunctionChunk>,
-	staticFields:Map<String, Value>,    // Static field values — shared, not per-instance
-	staticMethods:Map<String, FunctionChunk> // Static methods — called on VClass, not VInstance
+	staticFields:Map<String, Value>, // Static field values — shared, not per-instance
+	staticMethods:Map<String, FunctionChunk>, // Static methods — called on VClass, not VInstance
+	nativeMemberResolver:Null<Value->String->Null<Value>>
 }
 
 enum Value {
@@ -275,6 +279,7 @@ enum Value {
 	VNativeObject(obj:Dynamic); // Haxe objects that can be accessed from script
 	VClass(classData:ClassData); // Class definition
 	VInstance(className:String, fields:Map<String, Value>, classData:ClassData); // Class instance
+
 	/**
 	 * Lightweight iterator for array for-loops.
 	 * Replaces the old VDict({_iter_type, _iter_data, _iter_index}) approach
@@ -284,11 +289,11 @@ enum Value {
 	 *         without boxing into a new VIterator each step.
 	 */
 	VIterator(arr:Array<Value>, idx:Array<Int>);
+
 	/**
 	 * Enum instance: EnumName.VariantName with optional payload values.
 	 *   VEnumValue("Color", "Red", [])
 	 *   VEnumValue("Result", "Ok", [VString("hello")])
 	 */
 	VEnumValue(enumName:String, variant:String, values:Array<Value>);
-
 }

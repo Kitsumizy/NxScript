@@ -1,4 +1,4 @@
-package nx.script;
+package nx.script.parsers;
 
 import nx.script.Token;
 
@@ -12,7 +12,7 @@ using StringTools;
  * Normalizes all line endings to `\n` up front because Windows exists
  * and `\r\n` in error messages is deeply unpleasant.
  */
-class Tokenizer {
+class HaxeScriptTokenizer {
 	var input:String;
 	var pos:Int = 0;
 	var line:Int = 1;
@@ -31,10 +31,8 @@ class Tokenizer {
 		"function" => KFunction,
 		"class" => KClass,
 		"extends" => KExtends,
-		"override" => KOverride,
 		"new" => KNew,
 		"this" => KThis,
-		"super" => KSuper,
 		"return" => KReturn,
 		"if" => KIf,
 		"else" => KElse,
@@ -66,19 +64,12 @@ class Tokenizer {
 		"private" => KPrivate
 	];
 
-	public function new() {}
-
-	public function init(input:String):Tokenizer {
+	public function new(input:String) {
 		this.input = input.replace('\r\n', '\n').replace('\r', '\n');
-		this.pos = 0;
-		this.line = 1;
-		this.col = 1;
-		this.pendingTokens = [];
-		return this;
 	}
 
-	function createSubTokenizer(input:String):Tokenizer {
-		return new Tokenizer().init(input);
+	function createSubTokenizer(input:String):HaxeScriptTokenizer {
+		return new HaxeScriptTokenizer(input);
 	}
 
 	function keywordAliases():Map<String, String> {

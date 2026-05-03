@@ -17,6 +17,26 @@ import nx.script.Bytecode.ClassData;
 class NxProxy {
 	static inline var NATIVE_SUPER_INSTANCE_FIELD = "__native_super_instance";
 
+	/**
+	 * Wrap a VM instance value into a Haxe-facing proxy and bind script callbacks.
+	 * Used when script-created instances are passed directly into native APIs.
+	 */
+	public static function wrapInstanceValue(instance:Value, vm:VM):Dynamic {
+		return createProxy(instance, vm);
+	}
+
+	private static function getSuperForClosure(instance:Value, vm:VM):Value {
+		switch (instance) {
+			case VInstance(_, fields, classData):
+				if (classData.superClass != null && vm.classes.exists(classData.superClass))
+					return VClass(vm.classes.get(classData.superClass));
+				var nativeSuper = fields.get(NATIVE_SUPER_INSTANCE_FIELD);
+				return nativeSuper == null ? VNull : nativeSuper;
+			default:
+				return VNull;
+		}
+	}
+
 	// ========================================
 	// Public API
 	// ========================================
@@ -153,13 +173,15 @@ class NxProxy {
 					createFieldProperty(proxy, fieldName, fieldStorage, fields, vm);
 				}
 
-				if (!nativeProxy) {
+				// Always map script methods to proxy (whether native or not)
+				// This ensures script methods override native ones when extending native classes
+				{
 					// Set all methods from the class hierarchy
 					var currentClass = classData;
 					while (currentClass != null) {
 						for (methodName in currentClass.methods.keys()) {
 							// Skip constructor - it's not a regular method
-							if (methodName == "new" || Reflect.hasField(proxy, methodName)) {
+							if (methodName == "new") {
 								continue;
 							}
 
@@ -176,7 +198,10 @@ class NxProxy {
 									var scriptArgs:Array<Value> = [];
 									for (arg in args)
 										scriptArgs.push(vm.haxeToValue(arg));
-									var result = vm.callFunction(func, ["this" => instanceRef.value], scriptArgs);
+									var closure = new Map<String, Value>();
+									closure.set("this", instanceRef.value);
+									closure.set("super", getSuperForClosure(instanceRef.value, vm));
+									var result = vm.callFunction(func, closure, scriptArgs);
 
 									// Auto-sync after calling method in case the method modified fields
 									syncFromScript(proxy, instanceRef.value, vm);
@@ -187,7 +212,32 @@ class NxProxy {
 								}
 							});
 
-							Reflect.setField(proxy, methodName, callable);
+							// If it's a native proxy, assign to __script_methodName field
+							// (The macro will call these from within native methods)
+							if (nativeProxy) {
+								var scriptFieldName = '__script_$methodName';
+								var assigned = false;
+								try {
+									Reflect.setField(proxy, scriptFieldName, callable);
+									assigned = true;
+								} catch (_:Dynamic) {}
+
+								if (!assigned) {
+									var setScriptMethod = Reflect.field(proxy, "setScriptMethod");
+									if (setScriptMethod != null) {
+										Reflect.callMethod(proxy, setScriptMethod, [methodName, callable]);
+										assigned = true;
+									} else if (Reflect.field(proxy, "__nx_setScriptMethod") != null) {
+										Reflect.callMethod(proxy, Reflect.field(proxy, "__nx_setScriptMethod"), [methodName, callable]);
+										assigned = true;
+									}
+								}
+							} else {
+								// For pure script classes, override the method directly
+								if (!Reflect.hasField(proxy, methodName)) {
+									Reflect.setField(proxy, methodName, callable);
+								}
+							}
 						}
 
 						if (currentClass.superClass != null && vm.classes.exists(currentClass.superClass)) {
@@ -198,9 +248,11 @@ class NxProxy {
 					}
 
 					// Add a sync function to update the script instance when fields change (manual call)
-					Reflect.setField(proxy, "__syncToScript__", function() {
-						syncToScript(proxy, instanceRef.value, vm);
-					});
+					if (!nativeProxy && !Reflect.hasField(proxy, "__syncToScript__")) {
+						Reflect.setField(proxy, "__syncToScript__", function() {
+							syncToScript(proxy, instanceRef.value, vm);
+						});
+					}
 				}
 
 			default:
