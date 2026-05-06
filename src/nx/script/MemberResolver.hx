@@ -180,7 +180,7 @@ class MemberResolver {
 				var nativeClassName = nativeClass == null ? null : Type.getClassName(nativeClass);
 				var instanceFields:Array<String> = nativeClass == null ? null : Type.getInstanceFields(nativeClass);
 				if (instanceFields != null && instanceFields.indexOf(field) >= 0) {
-					var reflectedField = Reflect.field(obj, field);
+					var reflectedField = Reflection.getField(obj, field);
 					if (reflectedField != null) {
 						if (Reflection.isFunction(reflectedField)) {
 							var capturedObj = obj;
