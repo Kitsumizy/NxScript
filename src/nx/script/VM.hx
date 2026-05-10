@@ -1664,12 +1664,8 @@ class VM {
 
 	public function haxeToValue(value:Dynamic):Value {
 		// hxcpp guard.. dynamic can be of type bool as null !?tM
-		if (value == true)
-			return VBool(true);
-		if (value == false)
-			return VBool(false);
 		return switch (Type.typeof(value)) {
-			case TNull: VNull;
+			case TNull: Std.isOfType(value, Bool) ? VBool(value) : VNull;
 			case TBool: VBool(value);
 			case TInt: VNumber(value);
 			case TFloat: VNumber(value);
