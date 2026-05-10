@@ -429,7 +429,7 @@ class Parser {
 	function parseReturn():Stmt {
 		advance(); // consume 'return'
 
-		if (check(TNewLine) || check(TRightBrace) || isEOF()) {
+		if (check(TNewLine) || check(TSemicolon) || check(TRightBrace) || isEOF()) {
 			return SReturn(null);
 		}
 
