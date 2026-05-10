@@ -1019,6 +1019,7 @@ class Parser {
 		};
 		advance(); // consume 'match' or 'switch'
 		var subject = parseExpression();
+		skipNewlines();
 		expect(TLeftBrace, isSwitch ? "Expected '{' after switch expression" : "Expected '{' after match expression");
 		skipSeparators();
 
@@ -1144,6 +1145,7 @@ class Parser {
 		};
 		advance(); // consume 'match' or 'switch'
 		var subject = parseExpression();
+		skipNewlines();
 		expect(TLeftBrace, isSwitch ? "Expected '{' after switch expression" : "Expected '{' after match expression");
 		skipSeparators();
 
