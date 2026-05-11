@@ -14,6 +14,9 @@ import nx.script.Bytecode.Value;
 class MemberResolver {
 	static inline var NATIVE_SUPER_INSTANCE_FIELD = "__native_super_instance";
 
+	// Cache for native class fields to avoid expensive Type.getInstanceFields() calls in hot path
+	static var nativeFieldsCache:Map<String, Array<String>> = new Map();
+
 	var vm:VM;
 	var classStaticMethodCache:ObjectMap<ClassData, IntMap<Value>>;
 	var instanceClassMethodCache:ObjectMap<ClassData, IntMap<Null<FunctionChunk>>>;
@@ -36,6 +39,18 @@ class MemberResolver {
 		instanceMethodCache = new ObjectMap();
 		nativeObjectMethodCache = new ObjectMap();
 		nativeFieldKindCache = new Map();
+		// Don't clear nativeFieldsCache - it's a global performance optimization
+	}
+
+	inline function getNativeInstanceFields(nativeClass:Class<Dynamic>):Null<Array<String>> {
+		if (nativeClass == null)
+			return null;
+		var className = Type.getClassName(nativeClass);
+		if (nativeFieldsCache.exists(className))
+			return nativeFieldsCache.get(className);
+		var fields = Type.getInstanceFields(nativeClass);
+		nativeFieldsCache.set(className, fields);
+		return fields;
 	}
 
 	public function getMember(object:Value, field:String):Value {
@@ -178,7 +193,7 @@ class MemberResolver {
 
 				var nativeClass = Type.getClass(obj);
 				var nativeClassName = nativeClass == null ? null : Type.getClassName(nativeClass);
-				var instanceFields:Array<String> = nativeClass == null ? null : Type.getInstanceFields(nativeClass);
+				var instanceFields:Array<String> = getNativeInstanceFields(nativeClass);
 				if (instanceFields != null && instanceFields.indexOf(field) >= 0) {
 					var reflectedField = Reflection.getField(obj, field);
 					if (reflectedField != null) {

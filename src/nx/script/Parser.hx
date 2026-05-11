@@ -1053,7 +1053,8 @@ class Parser {
 				expect(TKeyword(KCase), "Expected 'case' in match block");
 				if (isSwitch) {
 					var patterns = parseSwitchCasePatterns();
-					expect(TColon, 'Expected ":" after case pattern at line ${peek().line}');
+					if (!match(TColon) && !match(TFatArrow))
+						throw 'Expected ":" or "=>" after case pattern at line ${peek().line}';
 					var body = parseSwitchCaseBody();
 					for (pattern in patterns) {
 						cases.push({pattern: pattern, body: body.copy()});
@@ -1184,7 +1185,8 @@ class Parser {
 
 			if (match(TKeyword(KDefault))) {
 				if (isSwitch) {
-					expect(TColon, 'Expected ":" after "default" at line ${peek().line}');
+					if (!match(TColon) && !match(TFatArrow))
+						throw 'Expected ":" or "=>" after "default" at line ${peek().line}';
 					defaultBody = parseSwitchCaseBody();
 				} else {
 					// default => body
@@ -1196,7 +1198,8 @@ class Parser {
 				expect(TKeyword(KCase), "Expected 'case' in match block");
 				if (isSwitch) {
 					var patterns = parseSwitchCasePatterns();
-					expect(TColon, 'Expected ":" after case pattern at line ${peek().line}');
+					if (!match(TColon) && !match(TFatArrow))
+						throw 'Expected ":" or "=>" after case pattern at line ${peek().line}';
 					var body = parseSwitchCaseBody();
 					for (pattern in patterns) {
 						cases.push({pattern: pattern, body: body.copy()});
