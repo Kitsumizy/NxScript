@@ -78,10 +78,20 @@ class Main {
 			var runCmd = cli.addCommand("run", "Run a script file", (cli, args, flags) -> {
 				var file = args["file"];
 				var watch = flags.exists("w") || flags.exists("watch");
+				#if SYS
 				runFile(file, watch);
+				#else
+				if (watch) {
+					err('Watch mode requires SYS compilation flag');
+					Sys.exit(1);
+				}
+				runFile(file, false);
+				#end
 			});
 			runCmd.addArgument("file", "The script file to run", String);
-			runCmd.addFlag("w", "Watch mode", ["-w", "--watch"]);
+			#if SYS
+			runCmd.addFlag("w", "Watch mode (hot reload on file change)", ["-w", "--watch"]);
+			#end
 
 			cli.addCommand("repl", "Start interactive REPL", (cli, args, flags) -> {
 				startRepl();
@@ -102,18 +112,18 @@ class Main {
 		}
 
 		if (watch) {
+			#if SYS
 			runWatch(path);
+			#else
+			err('Watch mode requires SYS compilation flag');
+			Sys.exit(1);
+			#end
 		} else {
-			var code = sys.io.File.getContent(path);
-			var interp = makeInterpreter(path);
-			try {
-				interp.runDynamic(code, path);
-			} catch (e:Dynamic) {
-				Sys.exit(1);
-			}
+			executeFile(path);
 		}
 	}
 
+	#if SYS
 	static function runWatch(path:String) {
 		Sys.println('[NxScript] Watching $path  (Ctrl+C to stop)');
 		var lastMod = sys.FileSystem.stat(path).mtime.getTime();
@@ -131,6 +141,7 @@ class Main {
 			}
 		}
 	}
+	#end
 
 	static function executeFile(path:String) {
 		var code   = sys.io.File.getContent(path);

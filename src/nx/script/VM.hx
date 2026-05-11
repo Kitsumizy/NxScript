@@ -24,8 +24,17 @@ using StringTools;
  *   and CONTINUES in the same run() invocation. Do not call run() twice. You'll know why.
  * - callFunction/callResolved bypass save/restore entirely — push frame directly onto the
  *   idle stack, let RETURN pop it naturally. No 12-field save/restore per host->script call.
+ * 
+ * Profiling: compile with -D nx_profile to enable instruction counting and timing
  */
 class VM {
+	#if nx_profile
+	// Profiling counters
+	public var instructionCount:Map<String, Int> = new Map();
+	public var callCount:Int = 0;
+	public var nativeCallCount:Int = 0;
+	public var memberAccessCount:Int = 0;
+	#end
 	// One Map to rule them all — shared across every zero-capture function. Never write to this.
 	static var EMPTY_MAP:Map<String, Value> = new Map<String, Value>();
 	// One Array to rule them all — shared across every no-upvalue function. Never write to this.
@@ -347,9 +356,19 @@ class VM {
 		var maxCallDepth = this.maxCallDepth;
 		var sp = this.sp; // manual stack pointer — avoids Array.push/pop resize overhead
 
+		#if nx_profile
+		// Profiling: count instructions
+		var instructionCount = this.instructionCount;
+		#end
+
 		while (true) {
 			var op = code[ip++];
 			var arg = code[ip++];
+
+			#if nx_profile
+			var opName = Op.getName(op);
+			instructionCount.set(opName, (instructionCount.exists(opName) ? instructionCount.get(opName) : 0) + 1);
+			#end
 
 			if (debug) {
 				var instIdx = (ip - 2) >> 1;
@@ -429,7 +448,35 @@ class VM {
 												case VNull:
 												default:
 													value = member;
-											}
+	/** Print profiling report (only available with -D nx_profile) */
+	#if nx_profile
+	public function printProfileReport():Void {
+		Sys.println("\n═══════════════════════════════════════");
+		Sys.println("  NxScript VM Profiling Report");
+		Sys.println("═══════════════════════════════════════");
+		Sys.println('Total function calls: $callCount');
+		Sys.println('Total native calls: $nativeCallCount');
+		Sys.println('Total member accesses: $memberAccessCount');
+		Sys.println("\nInstruction breakdown:");
+		
+		var sorted = [];
+		for (opName in instructionCount.keys()) {
+			sorted.push({name: opName, count: instructionCount.get(opName)});
+		}
+		sorted.sort((a, b) -> b.count - a.count);
+		
+		var total = 0;
+		for (item in sorted)
+			total += item.count;
+		
+		for (item in sorted) {
+			var pct = (item.count / total) * 100;
+			Sys.println('  ${item.name}: ${item.count} (${pct}%)');
+		}
+		Sys.println("═══════════════════════════════════════\n");
+	}
+	#end
+}
 										}
 										if (value == null)
 											throw 'Undefined variable: $name';
@@ -679,18 +726,16 @@ class VM {
 
 					switch (callee) {
 						case VFunction(funcChunk, closure):
-							currentFrame.ip = ip; // save continuation only when switching frames
+							currentFrame.ip = ip;
 							var paramCount = funcChunk.paramCount;
 							var paramDefaults = funcChunk.paramDefaults;
 							
-							// Validate argument count with defaults support
-							var paramDefaults = funcChunk.paramDefaults;
+							// Fast path validation
 							var minArgs = paramCount;
 							if (paramDefaults != null) {
 								var defaultsCount = 0;
-								for (key in paramDefaults.keys()) {
+								for (key in paramDefaults.keys())
 									defaultsCount++;
-								}
 								minArgs = paramCount - defaultsCount;
 							}
 							if (argc < minArgs || argc > paramCount)
@@ -704,23 +749,17 @@ class VM {
 							for (i in 0...argc)
 								stack[localsBase + i] = stack[src + i];
 
-							// Fill missing arguments with defaults
-							if (paramDefaults != null) {
-								for (i in argc...paramCount) {
+							// Fill missing args with defaults and init rest in single loop
+							for (i in argc...localCount) {
+								if (paramDefaults != null && i < paramCount) {
 									var defaultConstIdx = paramDefaults.get(i);
-									if (defaultConstIdx != null) {
-										stack[localsBase + i] = funcChunk.chunk.constants[defaultConstIdx];
-									} else {
-										stack[localsBase + i] = VNull;
-									}
+									stack[localsBase + i] = defaultConstIdx != null ? funcChunk.chunk.constants[defaultConstIdx] : VNull;
+								} else {
+									stack[localsBase + i] = VNull;
 								}
 							}
 
-							// init remaining locals
-							for (i in paramCount...localCount)
-								stack[localsBase + i] = VNull;
-
-							// closure injection for named locals that are still loaded via LOAD_LOCAL paths
+							// closure injection - O(1) with localSlots
 							if (closure != EMPTY_MAP) {
 								var localSlots = funcChunk.localSlots;
 								if (localSlots != null) {
@@ -771,6 +810,9 @@ class VM {
 							ip = 0;
 
 						case VNativeFunction(name, arity, fn):
+							#if nx_profile
+							nativeCallCount++;
+							#end
 							if (arity != -1 && argc != arity)
 								throw 'Native function $name expects $arity arguments, got $argc';
 
@@ -1076,6 +1118,9 @@ class VM {
 				case Op.GET_MEMBER:
 					var field = resolveMemberRuntimeName(members, strings, arg);
 					var object = stack[--sp];
+					#if nx_profile
+					memberAccessCount++;
+					#end
 					#if NXDEBUG
 					trace('GET_MEMBER: field=$field, object type=${Type.enumConstructor(object)}');
 					#end
@@ -1748,6 +1793,10 @@ class VM {
 	 * Precondition: no script is currently executing (frames must be empty).
 	 */
 	public function callFunction(func:FunctionChunk, closure:Map<String, Value>, args:Array<Value>):Value {
+		#if nx_profile
+		callCount++;
+		#end
+		
 		if (func.chunk.code == null)
 			buildFlatCode(func.chunk);
 		bindMemberSlots(func.chunk);
@@ -1756,46 +1805,38 @@ class VM {
 		var paramCount = func.paramCount;
 		var paramDefaults = func.paramDefaults;
 
-		// Validate argument count
+		// Fast path validation - inline defaults count check
 		var minArgs = paramCount;
 		if (paramDefaults != null) {
 			var defaultsCount = 0;
-			for (key in paramDefaults.keys()) {
+			for (key in paramDefaults.keys())
 				defaultsCount++;
-			}
 			minArgs = paramCount - defaultsCount;
 		}
 		if (args.length < minArgs || args.length > paramCount)
 			throw 'Function ${func.name} expects ${minArgs}-${paramCount} arguments, got ${args.length}';
 
-		// Init locals then fill params — stack is idle so we always start at 0
+		// Fast path: init stack with provided args + defaults in single loop
 		var i = 0;
-		while (i < localCount) {
-			stack[i] = VNull;
-			i++;
-		}
 		
-		// Fill provided arguments
-		i = 0;
-		while (i < args.length && i < paramCount) {
+		// Copy provided arguments
+		while (i < args.length) {
 			stack[i] = args[i];
 			i++;
 		}
 		
-		// Fill missing arguments with defaults
-		if (paramDefaults != null) {
-			while (i < paramCount) {
+		// Fill remaining with defaults or null
+		while (i < localCount) {
+			if (paramDefaults != null && i < paramCount) {
 				var defaultConstIdx = paramDefaults.get(i);
-				if (defaultConstIdx != null) {
-					stack[i] = func.chunk.constants[defaultConstIdx];
-				} else {
-					stack[i] = VNull;
-				}
-				i++;
+				stack[i] = defaultConstIdx != null ? func.chunk.constants[defaultConstIdx] : VNull;
+			} else {
+				stack[i] = VNull;
 			}
+			i++;
 		}
 
-		// Closure → local slots (O(1) with localSlots, O(n) fallback)
+		// Closure injection - O(1) with localSlots
 		if (closure != EMPTY_MAP && closure != null) {
 			var localSlots = func.localSlots;
 			if (localSlots != null) {
@@ -1805,6 +1846,7 @@ class VM {
 						stack[idx] = closure.get(key);
 				}
 			} else {
+				// Fallback: O(n) lookup by name
 				var localNames = func.localNames;
 				if (localNames != null) {
 					for (key in closure.keys()) {
