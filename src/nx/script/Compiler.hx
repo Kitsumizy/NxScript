@@ -1338,6 +1338,44 @@ class Compiler {
 			globalConstMask: globalConstMask
 		};
 
+		// Pre-compile default values for parameters
+		// Store as: param index -> constant index
+		var paramDefaultsMap:Map<Int, Int> = new Map();
+		var hasDefaults = false;
+		for (i in 0...params.length) {
+			var param = params[i];
+			if (param.defaultValue != null) {
+				hasDefaults = true;
+				// Compile default value to a constant
+				var defaultExpr = param.defaultValue;
+				var constIdx = switch (defaultExpr) {
+					case ENumber(v):
+						var idx = constants.length;
+						constants.push(VNumber(v));
+						idx;
+					case EString(v):
+						var idx = constants.length;
+						constants.push(VString(v));
+						idx;
+					case EBool(v):
+						var idx = constants.length;
+						constants.push(VBool(v));
+						idx;
+					case ENull:
+						var idx = constants.length;
+						constants.push(VNull);
+						idx;
+					default:
+						// For complex expressions, we'd need to compile them
+						// For now, use null as placeholder
+						var idx = constants.length;
+						constants.push(VNull);
+						idx;
+				}
+				paramDefaultsMap.set(i, constIdx);
+			}
+		}
+
 		for (stmt in body) {
 			compileStatement(stmt);
 		}
@@ -1359,8 +1397,9 @@ class Compiler {
 			isLambda: isLambda,
 			localCount: slotCount,
 			localNames: localNames,
-			localSlots: localSlots, // preserve Map<String,Int> for O(1) slot lookup in call()
-			upvalueNames: upvalueNames
+			localSlots: localSlots,
+			upvalueNames: upvalueNames,
+			paramDefaults: hasDefaults ? paramDefaultsMap : null
 		};
 		// Also store localNames on the Chunk so run() can access it for closure building
 		chunk.localNames = localNames;

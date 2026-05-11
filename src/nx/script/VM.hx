@@ -681,8 +681,20 @@ class VM {
 						case VFunction(funcChunk, closure):
 							currentFrame.ip = ip; // save continuation only when switching frames
 							var paramCount = funcChunk.paramCount;
-							if (argc != paramCount)
-								throw 'Function ${funcChunk.name} expects $paramCount arguments, got $argc';
+							var paramDefaults = funcChunk.paramDefaults;
+							
+							// Validate argument count with defaults support
+							var paramDefaults = funcChunk.paramDefaults;
+							var minArgs = paramCount;
+							if (paramDefaults != null) {
+								var defaultsCount = 0;
+								for (key in paramDefaults.keys()) {
+									defaultsCount++;
+								}
+								minArgs = paramCount - defaultsCount;
+							}
+							if (argc < minArgs || argc > paramCount)
+								throw 'Function ${funcChunk.name} expects ${minArgs}-${paramCount} arguments, got $argc';
 
 							var localCount = funcChunk.localCount;
 							var localsBase = calleeIndex;
@@ -692,8 +704,20 @@ class VM {
 							for (i in 0...argc)
 								stack[localsBase + i] = stack[src + i];
 
+							// Fill missing arguments with defaults
+							if (paramDefaults != null) {
+								for (i in argc...paramCount) {
+									var defaultConstIdx = paramDefaults.get(i);
+									if (defaultConstIdx != null) {
+										stack[localsBase + i] = funcChunk.chunk.constants[defaultConstIdx];
+									} else {
+										stack[localsBase + i] = VNull;
+									}
+								}
+							}
+
 							// init remaining locals
-							for (i in argc...localCount)
+							for (i in paramCount...localCount)
 								stack[localsBase + i] = VNull;
 
 							// closure injection for named locals that are still loaded via LOAD_LOCAL paths
@@ -1730,6 +1754,19 @@ class VM {
 
 		var localCount = func.localCount;
 		var paramCount = func.paramCount;
+		var paramDefaults = func.paramDefaults;
+
+		// Validate argument count
+		var minArgs = paramCount;
+		if (paramDefaults != null) {
+			var defaultsCount = 0;
+			for (key in paramDefaults.keys()) {
+				defaultsCount++;
+			}
+			minArgs = paramCount - defaultsCount;
+		}
+		if (args.length < minArgs || args.length > paramCount)
+			throw 'Function ${func.name} expects ${minArgs}-${paramCount} arguments, got ${args.length}';
 
 		// Init locals then fill params — stack is idle so we always start at 0
 		var i = 0;
@@ -1737,10 +1774,25 @@ class VM {
 			stack[i] = VNull;
 			i++;
 		}
+		
+		// Fill provided arguments
 		i = 0;
 		while (i < args.length && i < paramCount) {
 			stack[i] = args[i];
 			i++;
+		}
+		
+		// Fill missing arguments with defaults
+		if (paramDefaults != null) {
+			while (i < paramCount) {
+				var defaultConstIdx = paramDefaults.get(i);
+				if (defaultConstIdx != null) {
+					stack[i] = func.chunk.constants[defaultConstIdx];
+				} else {
+					stack[i] = VNull;
+				}
+				i++;
+			}
 		}
 
 		// Closure → local slots (O(1) with localSlots, O(n) fallback)

@@ -191,6 +191,21 @@ class BytecodeSerializer {
 			writeString(output, name);
 		}
 
+		// Parameter defaults
+		var hasDefaults = func.paramDefaults != null;
+		output.writeByte(hasDefaults ? 1 : 0);
+		if (hasDefaults) {
+			var defaultsCount = 0;
+			for (key in func.paramDefaults.keys()) {
+				defaultsCount++;
+			}
+			output.writeInt32(defaultsCount);
+			for (paramIdx in func.paramDefaults.keys()) {
+				output.writeInt32(paramIdx);
+				output.writeInt32(func.paramDefaults.get(paramIdx));
+			}
+		}
+
 		// Function body chunk
 		writeChunk(output, func.chunk);
 	}
@@ -357,6 +372,19 @@ class BytecodeSerializer {
 				upvalueNames.push(readString(input));
 		}
 
+		// Parameter defaults
+		var paramDefaults:Null<Map<Int, Int>> = null;
+		var hasDefaults = input.readByte() == 1;
+		if (hasDefaults) {
+			paramDefaults = new Map();
+			var defaultsCount = input.readInt32();
+			for (i in 0...defaultsCount) {
+				var paramIdx = input.readInt32();
+				var constIdx = input.readInt32();
+				paramDefaults.set(paramIdx, constIdx);
+			}
+		}
+
 		// Function body chunk
 		var chunk = readChunk(input, version);
 		chunk.localNames = localNames;
@@ -377,7 +405,8 @@ class BytecodeSerializer {
 			localCount: localCount,
 			localNames: localNames,
 			localSlots: localSlots,
-			upvalueNames: upvalueNames
+			upvalueNames: upvalueNames,
+			paramDefaults: paramDefaults
 		};
 	}
 

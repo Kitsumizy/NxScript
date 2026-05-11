@@ -382,7 +382,13 @@ class Parser {
 				type = parseTypeHint();
 			}
 
-			params.push({name: name, type: type});
+			// Optional default value: name:Type = expr
+			var defaultValue:Null<Expr> = null;
+			if (match(TOperator(OAssign))) {
+				defaultValue = parseExpression();
+			}
+
+			params.push({name: name, type: type, defaultValue: defaultValue});
 			skipNewlines();
 		} while (match(TComma));
 

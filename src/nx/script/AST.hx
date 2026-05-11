@@ -149,7 +149,8 @@ typedef StmtWithPos = {
 
 typedef Param = {
 	name:String,
-	type:Null<TypeHint>
+	type:Null<TypeHint>,
+	?defaultValue:Null<Expr>
 }
 
 typedef ClassMethod = {

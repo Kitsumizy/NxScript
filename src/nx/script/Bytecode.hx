@@ -253,6 +253,7 @@ class FunctionChunk {
 	@:optional public var localNames:Array<String> = null;
 	@:optional public var localSlots:Map<String, Int> = null;
 	@:optional public var upvalueNames:Array<String> = null;
+	@:optional public var paramDefaults:Map<Int, Int> = null; // param index -> constant index for default value
 }
 
 typedef ClassData = {
