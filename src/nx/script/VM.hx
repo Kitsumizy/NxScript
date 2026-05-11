@@ -448,35 +448,7 @@ class VM {
 												case VNull:
 												default:
 													value = member;
-	/** Print profiling report (only available with -D nx_profile) */
-	#if nx_profile
-	public function printProfileReport():Void {
-		Sys.println("\n═══════════════════════════════════════");
-		Sys.println("  NxScript VM Profiling Report");
-		Sys.println("═══════════════════════════════════════");
-		Sys.println('Total function calls: $callCount');
-		Sys.println('Total native calls: $nativeCallCount');
-		Sys.println('Total member accesses: $memberAccessCount');
-		Sys.println("\nInstruction breakdown:");
-		
-		var sorted = [];
-		for (opName in instructionCount.keys()) {
-			sorted.push({name: opName, count: instructionCount.get(opName)});
-		}
-		sorted.sort((a, b) -> b.count - a.count);
-		
-		var total = 0;
-		for (item in sorted)
-			total += item.count;
-		
-		for (item in sorted) {
-			var pct = (item.count / total) * 100;
-			Sys.println('  ${item.name}: ${item.count} (${pct}%)');
-		}
-		Sys.println("═══════════════════════════════════════\n");
-	}
-	#end
-}
+											}
 										}
 										if (value == null)
 											throw 'Undefined variable: $name';
@@ -3184,6 +3156,35 @@ class VM {
 			default: throw 'Expected number';
 		}));
 	}
+
+	#if nx_profile
+	/** Print profiling report */
+	public function printProfileReport():Void {
+		Sys.println("\n═══════════════════════════════════════");
+		Sys.println("  NxScript VM Profiling Report");
+		Sys.println("═══════════════════════════════════════");
+		Sys.println('Total function calls: $callCount');
+		Sys.println('Total native calls: $nativeCallCount');
+		Sys.println('Total member accesses: $memberAccessCount');
+		Sys.println("\nInstruction breakdown:");
+		
+		var sorted = [];
+		for (opName in instructionCount.keys()) {
+			sorted.push({name: opName, count: instructionCount.get(opName)});
+		}
+		sorted.sort((a, b) -> b.count - a.count);
+		
+		var total = 0;
+		for (item in sorted)
+			total += item.count;
+		
+		for (item in sorted) {
+			var pct = (item.count / total) * 100;
+			Sys.println('  ${item.name}: ${item.count} (${pct}%)');
+		}
+		Sys.println("═══════════════════════════════════════\n");
+	}
+	#end
 }
 
 // Switch to Types, Structures are Dynamic and for properties expensive.

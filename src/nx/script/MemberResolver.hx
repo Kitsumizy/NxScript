@@ -23,6 +23,8 @@ class MemberResolver {
 	var instanceMethodCache:ObjectMap<Dynamic, IntMap<Value>>;
 	var nativeObjectMethodCache:ObjectMap<Dynamic, IntMap<Value>>;
 	var nativeFieldKindCache:Map<String, IntMap<Bool>>;
+	// Direct field value cache for native objects - avoids Reflection.getField in hot path
+	var nativeFieldValueCache:ObjectMap<Dynamic, IntMap<Value>>;
 
 	public function new(vm:VM) {
 		this.vm = vm;
@@ -31,6 +33,7 @@ class MemberResolver {
 		instanceMethodCache = new ObjectMap();
 		nativeObjectMethodCache = new ObjectMap();
 		nativeFieldKindCache = new Map();
+		nativeFieldValueCache = new ObjectMap();
 	}
 
 	public function flush():Void {
@@ -39,6 +42,7 @@ class MemberResolver {
 		instanceMethodCache = new ObjectMap();
 		nativeObjectMethodCache = new ObjectMap();
 		nativeFieldKindCache = new Map();
+		nativeFieldValueCache = new ObjectMap();
 		// Don't clear nativeFieldsCache - it's a global performance optimization
 	}
 
@@ -149,6 +153,11 @@ class MemberResolver {
 				if (nativeCache != null && nativeCache.exists(memberId))
 					return nativeCache.get(memberId);
 
+				// Check field value cache first
+				var fieldCache = nativeFieldValueCache.get(obj);
+				if (fieldCache != null && fieldCache.exists(memberId))
+					return fieldCache.get(memberId);
+
 				var field = vm.resolveMemberName(memberId);
 				if (field == null)
 					throw 'Unknown member id: $memberId';
@@ -214,10 +223,17 @@ class MemberResolver {
 					if (cachedFn != null && Reflection.isFunction(cachedFn)) {
 						var capturedObj = obj;
 						var capturedFn = cachedFn;
-						return cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
+						var result = cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
 							var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
 							return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
 						}));
+						// Cache the method wrapper in field value cache too
+						if (fieldCache == null) {
+							fieldCache = new IntMap<Value>();
+							nativeFieldValueCache.set(obj, fieldCache);
+						}
+						fieldCache.set(memberId, result);
+						return result;
 					}
 				}
 
@@ -233,14 +249,32 @@ class MemberResolver {
 				}
 				if (kindCache != null)
 					kindCache.set(memberId, isFn);
-				if (!isFn)
-					return vm.haxeToValue(raw);
+				
+				// Cache the result
+				var result:Value;
+				if (!isFn) {
+					result = vm.haxeToValue(raw);
+					// Cache field values immediately
+					if (fieldCache == null) {
+						fieldCache = new IntMap<Value>();
+						nativeFieldValueCache.set(obj, fieldCache);
+					}
+					fieldCache.set(memberId, result);
+					return result;
+				}
 				var capturedObj = obj;
 				var capturedFn = raw;
-				return cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
+				result = cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
 					var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
 					return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
 				}));
+				// Cache method wrapper
+				if (fieldCache == null) {
+					fieldCache = new IntMap<Value>();
+					nativeFieldValueCache.set(obj, fieldCache);
+				}
+				fieldCache.set(memberId, result);
+				return result;
 
 			default:
 				throw 'Unsupported member target';
@@ -279,6 +313,10 @@ class MemberResolver {
 				if (fieldName == null)
 					throw 'Unknown member id: $memberId';
 				Reflection.setField(obj, fieldName, vm.valueToHaxe(value));
+				// Invalidate field value cache for this member
+				var fieldCache = nativeFieldValueCache.get(obj);
+				if (fieldCache != null)
+					fieldCache.remove(memberId);
 				var nativeClass = Type.getClass(obj);
 				if (nativeClass != null) {
 					var nativeClassName = Type.getClassName(nativeClass);
