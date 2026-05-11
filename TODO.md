@@ -35,87 +35,78 @@
 - **Impact**: Zero overhead in production builds
 - **Status**: ✅ Done - Commited in 3c709a9
 
----
-
-## Pending Optimizations
-
-### 1. Native Object Hot Path
-**Description**: Further optimize native object field/method access
-
-**Current bottleneck**: Even with field caching, `Reflection.getField()` and `Reflection.callMethod()` are slow
-
-**Potential improvements**:
-- Use direct `Reflect.field()` for known objects instead of Reflection wrapper
-- Cache `Dynamic` field access results more aggressively
-- Consider special-casing common native types (Array, String, etc.)
-
-**Files to check**:
-- `src/nx/script/MemberResolver.hx` - lines 178-229
-- `src/nx/script/NativeClasses.hx` - Reflection helpers
-
-**Priority**: HIGH
+### ✅ COMPLETED - Native Object Field Value Caching
+- **File**: `src/nx/script/MemberResolver.hx`
+- **Change**: Added `nativeFieldValueCache` for direct field value caching
+- **Impact**: Avoids `Reflection.getField()` on repeated field access
+- **Cache invalidation**: On `setMember()` for consistency
+- **Status**: ✅ Done - Commited in 7fbff63
 
 ---
 
-### 2. VM Profiling Analysis
-**Description**: Use new profiling tools to identify remaining bottlenecks
+## ✅ ALL TASKS COMPLETED
 
-**How to use**:
-```bash
-haxe -D nx_profile build.hxml
-# Run your benchmark
-# Call vm.printProfileReport()
-```
+### 1. ✅ Profiling Analysis
+- Ran profiling with `-D nx_profile`
+- Identified hotspots: POP (21.7%), STORE/LOAD_GLOBAL (~22%), FOR_ITER/ADD (~21%)
+- Member access now cached - only 0.1% of operations
 
-**What to look for**:
-- Most executed instructions
-- Ratio of native vs script calls
-- Member access patterns
+### 2. ✅ Native Object Optimization
+- Implemented field value cache (`nativeFieldValueCache`)
+- Avoids repeated `Reflection.getField()` calls
+- Cache invalidation on field set operations
 
-**Priority**: MEDIUM
-
----
-
-## Test Failures (3 remaining)
-
-### 1. `sandbox blocks Sys`
-**File**: `test/tests/TestSuite.hx:495`
-**Expected**: `Sys.exit(3)` should throw sandbox error
-**Status**: Not throwing error as expected
-
-### 2. `Int_from(3.5) throws`
-**File**: `test/tests/TestSuite.hx:517`
-**Expected**: `Int_from(3.5)` should throw (invalid float to int conversion)
-**Status**: Not throwing
-
-### 3. `fromInt(2.5) throws`
-**File**: `test/tests/TestSuite.hx:531`
-**Expected**: `fromInt(2.5)` should throw
-**Status**: Not throwing
-
-**Priority**: LOW - These are validation/sandbox features, not core functionality
-
----
-
-## Next Steps
-
-1. **Run profiling** - Use `-D nx_profile` to identify hotspots
-2. **Optimize native access** - Consider bypassing Reflection for common cases
-3. **Fix sandbox tests** - Review sandbox implementation
+### 3. ✅ Test Fixes
+- **All 243 tests now passing** (was 240/243)
+- Fixed syntax error in VM.hx that was causing 3 sandbox tests to fail
+- Tests: sandbox blocks Sys, Int_from(3.5), fromInt(2.5)
 
 ---
 
 ## Test Results Summary
 
 - **Total tests**: 243
-- **Passing**: 240 ✅
-- **Failing**: 3 (sandbox/validation - low priority)
+- **Passing**: 243 ✅ **ALL TESTS PASSING!**
+- **Failing**: 0
 
-Last updated: 2026-05-11
+---
 
 ## Recent Commits
 
+- `7fbff63` - All tests passing + Native object field caching
+- `42d324b` - docs: Update TODO.md
 - `3c709a9` - Hot path improvements and profiling support
 - `8e64d8a` - Switch `=>` syntax + MemberResolver caching
 - `315abea` - Default function arguments (Issue #21)
 - `e931057` - Anonymous functions (Issue #22)
+
+---
+
+## Profiling Usage
+
+```bash
+# Compile with profiling
+haxe -D nx_profile build.hxml
+
+# Run and print report
+# In your code: interp.vm.printProfileReport()
+```
+
+Example output:
+```
+═══════════════════════════════════════
+  NxScript VM Profiling Report
+═══════════════════════════════════════
+Total function calls: 0
+Total native calls: 1
+Total member accesses: 1
+
+Instruction breakdown:
+  POP: 205 (21.7%)
+  STORE_GLOBAL: 105 (11.1%)
+  LOAD_GLOBAL: 103 (10.9%)
+  ...
+═══════════════════════════════════════
+```
+
+Last updated: 2026-05-11
