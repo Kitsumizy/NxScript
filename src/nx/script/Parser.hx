@@ -429,7 +429,7 @@ class Parser {
 	function parseReturn():Stmt {
 		advance(); // consume 'return'
 
-		if (check(TNewLine) || check(TRightBrace) || isEOF()) {
+		if (check(TNewLine) || check(TSemicolon) || check(TRightBrace) || isEOF()) {
 			return SReturn(null);
 		}
 
@@ -1019,6 +1019,7 @@ class Parser {
 		};
 		advance(); // consume 'match' or 'switch'
 		var subject = parseExpression();
+		skipNewlines();
 		expect(TLeftBrace, isSwitch ? "Expected '{' after switch expression" : "Expected '{' after match expression");
 		skipSeparators();
 
@@ -1144,6 +1145,7 @@ class Parser {
 		};
 		advance(); // consume 'match' or 'switch'
 		var subject = parseExpression();
+		skipNewlines();
 		expect(TLeftBrace, isSwitch ? "Expected '{' after switch expression" : "Expected '{' after match expression");
 		skipSeparators();
 
