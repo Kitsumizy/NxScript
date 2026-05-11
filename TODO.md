@@ -14,27 +14,32 @@
 - **Impact**: Fixes 17 failing tests
 - **Status**: ✅ Done - Commited in 8e64d8a
 
+### ✅ COMPLETED - Hot Path Calling Optimizations
+- **File**: `src/nx/script/VM.hx`
+- **Changes**:
+  - Optimized `callFunction()`: single loop for args+defaults
+  - Optimized `OP_CALL`: combined defaults+locals initialization
+  - Removed redundant variable declarations
+  - Added `#if nx_profile` profiling support
+- **Profiling features**:
+  - `instructionCount`: opcode execution frequency
+  - `callCount`: total function calls
+  - `nativeCallCount`: native function calls  
+  - `memberAccessCount`: member access operations
+  - `printProfileReport()`: detailed breakdown
+- **Status**: ✅ Done - Commited in 3c709a9
+
+### ✅ COMPLETED - Hot Reloading Conditional
+- **File**: `src/nx/script/Main.hx`
+- **Change**: Watch mode now requires `#if SYS` compilation flag
+- **Impact**: Zero overhead in production builds
+- **Status**: ✅ Done - Commited in 3c709a9
+
 ---
 
 ## Pending Optimizations
 
-### 1. Hot Path Calling Optimization
-**Description**: Reduce overhead in function calls, especially for native methods
-
-**Potential improvements**:
-- Inline common native method calls
-- Cache method resolution results more aggressively
-- Avoid unnecessary closure creation for bound methods
-
-**Files to check**:
-- `src/nx/script/VM.hx` - `callFunction()`, `callResolved()`
-- `src/nx/script/MemberResolver.hx` - `cacheNativeMethodById()`
-
-**Priority**: HIGH
-
----
-
-### 2. Native Object Hot Path
+### 1. Native Object Hot Path
 **Description**: Further optimize native object field/method access
 
 **Current bottleneck**: Even with field caching, `Reflection.getField()` and `Reflection.callMethod()` are slow
@@ -52,36 +57,20 @@
 
 ---
 
-### 3. Hot Reloading (SYS only)
-**Description**: Enable hot reloading ONLY when SYS (scripting system) is active
+### 2. VM Profiling Analysis
+**Description**: Use new profiling tools to identify remaining bottlenecks
 
-**Current state**: Unknown - need to investigate current hot reload implementation
+**How to use**:
+```bash
+haxe -D nx_profile build.hxml
+# Run your benchmark
+# Call vm.printProfileReport()
+```
 
-**Requirements**:
-- Add flag/config for hot reload mode
-- Only enable when explicitly requested (SYS context)
-- Ensure zero overhead when disabled
-
-**Files to check**:
-- `src/nx/script/Interpreter.hx`
-- `src/nx/script/VM.hx`
-- Search for "hot reload", "reload", "watch"
-
-**Priority**: MEDIUM
-
----
-
-### 4. VM Performance Investigation
-**Description**: Profile VM to identify remaining bottlenecks
-
-**Known slow operations**:
-- Member access on native objects (partially fixed)
-- Closure creation for bound methods
-- Instruction dispatch in VM run loop
-
-**Tools to use**:
-- `test/tests/SpeedCheck/SpeedCheckTest.hx` - existing benchmarks
-- Add profiling counters to VM.run()
+**What to look for**:
+- Most executed instructions
+- Ratio of native vs script calls
+- Member access patterns
 
 **Priority**: MEDIUM
 
@@ -110,10 +99,9 @@
 
 ## Next Steps
 
-1. **Profile VM** - Run SpeedCheckTest to establish baseline performance
-2. **Investigate hot path calling** - Look at callFunction and callResolved
-3. **Optimize native object access** - Consider bypassing Reflection for common cases
-4. **Fix sandbox tests** - Review sandbox implementation
+1. **Run profiling** - Use `-D nx_profile` to identify hotspots
+2. **Optimize native access** - Consider bypassing Reflection for common cases
+3. **Fix sandbox tests** - Review sandbox implementation
 
 ---
 
@@ -124,3 +112,10 @@
 - **Failing**: 3 (sandbox/validation - low priority)
 
 Last updated: 2026-05-11
+
+## Recent Commits
+
+- `3c709a9` - Hot path improvements and profiling support
+- `8e64d8a` - Switch `=>` syntax + MemberResolver caching
+- `315abea` - Default function arguments (Issue #21)
+- `e931057` - Anonymous functions (Issue #22)
