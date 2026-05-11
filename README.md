@@ -249,6 +249,7 @@ null is Null       # true
 ## built-in methods
 
 ### numbers
+
 ```nx
 (3.7).floor()    # 3
 (-5).abs()       # 5
@@ -259,6 +260,7 @@ null is Null       # true
 ```
 
 ### strings
+
 ```nx
 "hello".upper()                      # HELLO
 "  hi  ".trim()                      # hi
@@ -273,6 +275,7 @@ null is Null       # true
 ```
 
 ### arrays
+
 ```nx
 [1,2,3].map(x => x * 2)              # [2,4,6]
 [1,2,3,4].filter(x => x > 2)         # [3,4]
@@ -292,6 +295,7 @@ var b = arr.copy()                    # independent copy
 ```
 
 ### dicts
+
 ```nx
 var d = {"x": 1, "y": 2}
 d.has("x")       # true
@@ -304,6 +308,7 @@ d.clear()
 ```
 
 ### global functions
+
 ```nx
 range(5)           # [0,1,2,3,4]
 range(2, 7)        # [2,3,4,5,6]
@@ -506,31 +511,6 @@ For the broader suite, run:
 cd test/tests
 haxe test_suite.hxml
 ```
-
-## api docs
-
-Build the handmade docs site (API XML + browser sandbox):
-
-```bash
-pwsh -ExecutionPolicy Bypass -File docs/build-docs.ps1
-```
-
-Serve `docs/` locally:
-
-```bash
-cd docs
-python -m http.server 5500
-```
-
-Manual API XML generation only:
-
-```bash
-haxe doc.hxml
-```
-
-This writes `docs/api.xml`.
-
----
 
 ## license
 
