@@ -105,6 +105,22 @@ class BugFixTest {
 		assert(res[0] == 10, "Postfix returns old value 10");
 		assert(res[1] == 11, "Target incremented to 11");
 
+		// Test: anonymous function with 'function' keyword (Issue #22)
+		trace("\nTest: anonymous function with 'function' keyword");
+		r = interp.runDynamic('
+			var result = function(x) { return x + 1; };
+			result(5);
+		');
+		assert(r == 6, "Anonymous function(x) { return x + 1; }(5) == 6");
+
+		// Test: anonymous function with 'func' keyword
+		trace("\nTest: anonymous function with 'func' keyword");
+		r = interp.runDynamic('
+			var result2 = func(x) { return x * 2; };
+			result2(5);
+		');
+		assert(r == 10, "Anonymous func(x) { return x * 2; }(5) == 10");
+
 		trace("\n========================================");
 		trace("ALL BUG FIX TESTS PASSED!");
 		trace("========================================");

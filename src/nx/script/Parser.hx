@@ -907,6 +907,9 @@ class Parser {
 			case TKeyword(KMatch), TKeyword(KSwitch):
 				parseMatchExpression();
 
+			case TKeyword(KFunction), TKeyword(KFunc):
+				parseAnonymousFunc();
+
 			case TNumber(v):
 				advance();
 				ENumber(v);
@@ -1081,6 +1084,22 @@ class Parser {
 			var expr = parseExpression();
 			return ELambda(params, Left(expr));
 		}
+	}
+
+	function parseAnonymousFunc():Expr {
+		advance(); // consume 'function' or 'func'
+		// Optional function name for named anonymous functions (ignored for now)
+		if (isIdentifier()) {
+			advance();
+		}
+		expect(TLeftParen, "Expected '(' after 'function' in anonymous function");
+		var params = parseParameters();
+		expect(TRightParen, "Expected ')' after parameters");
+		skipNewlines();
+		expect(TLeftBrace, "Expected '{' before anonymous function body");
+		var body = parseBlockBody();
+		expect(TRightBrace, "Expected '}' after anonymous function body");
+		return ELambda(params, Right(body));
 	}
 
 	function parseArrayLiteral():Expr {
