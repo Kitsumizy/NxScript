@@ -16,6 +16,9 @@ class MemberResolver {
 
 	// Cache for native class fields to avoid expensive Type.getInstanceFields() calls in hot path
 	static var nativeFieldsCache:Map<String, Array<String>> = new Map();
+	
+	// NEW: Direct memberId -> field/value cache for native objects (bypasses name resolution)
+	var nativeMemberByIdCache:ObjectMap<Dynamic, IntMap<Value>>;
 
 	var vm:VM;
 	var classStaticMethodCache:ObjectMap<ClassData, IntMap<Value>>;
@@ -34,6 +37,7 @@ class MemberResolver {
 		nativeObjectMethodCache = new ObjectMap();
 		nativeFieldKindCache = new Map();
 		nativeFieldValueCache = new ObjectMap();
+		nativeMemberByIdCache = new ObjectMap();
 	}
 
 	public function flush():Void {
@@ -43,6 +47,7 @@ class MemberResolver {
 		nativeObjectMethodCache = new ObjectMap();
 		nativeFieldKindCache = new Map();
 		nativeFieldValueCache = new ObjectMap();
+		nativeMemberByIdCache = new ObjectMap();
 		// Don't clear nativeFieldsCache - it's a global performance optimization
 	}
 
@@ -149,11 +154,16 @@ class MemberResolver {
 				return VNull;
 
 			case VNativeObject(obj):
+				// FAST PATH: Check member-by-id cache first (bypasses name resolution entirely)
+				var memberByIdCache = nativeMemberByIdCache.get(obj);
+				if (memberByIdCache != null && memberByIdCache.exists(memberId))
+					return memberByIdCache.get(memberId);
+				
 				var nativeCache = nativeObjectMethodCache.get(obj);
 				if (nativeCache != null && nativeCache.exists(memberId))
 					return nativeCache.get(memberId);
 
-				// Check field value cache first
+				// Check field value cache second
 				var fieldCache = nativeFieldValueCache.get(obj);
 				if (fieldCache != null && fieldCache.exists(memberId))
 					return fieldCache.get(memberId);
@@ -209,12 +219,36 @@ class MemberResolver {
 						if (Reflection.isFunction(reflectedField)) {
 							var capturedObj = obj;
 							var capturedFn = reflectedField;
-							return cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
+							var result = cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
 								var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
 								return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
 							}));
+							// Cache in ALL caches for maximum speed
+							if (fieldCache == null) {
+								fieldCache = new IntMap<Value>();
+								nativeFieldValueCache.set(obj, fieldCache);
+							}
+							fieldCache.set(memberId, result);
+							if (memberByIdCache == null) {
+								memberByIdCache = new IntMap<Value>();
+								nativeMemberByIdCache.set(obj, memberByIdCache);
+							}
+							memberByIdCache.set(memberId, result);
+							return result;
 						}
-						return vm.haxeToValue(reflectedField);
+						var result = vm.haxeToValue(reflectedField);
+						// Cache value in ALL caches
+						if (fieldCache == null) {
+							fieldCache = new IntMap<Value>();
+							nativeFieldValueCache.set(obj, fieldCache);
+						}
+						fieldCache.set(memberId, result);
+						if (memberByIdCache == null) {
+							memberByIdCache = new IntMap<Value>();
+							nativeMemberByIdCache.set(obj, memberByIdCache);
+						}
+						memberByIdCache.set(memberId, result);
+						return result;
 					}
 				}
 				var kindCache = nativeClassName == null ? null : nativeFieldKindCache.get(nativeClassName);
@@ -227,12 +261,17 @@ class MemberResolver {
 							var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
 							return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
 						}));
-						// Cache the method wrapper in field value cache too
+						// Cache in ALL caches
 						if (fieldCache == null) {
 							fieldCache = new IntMap<Value>();
 							nativeFieldValueCache.set(obj, fieldCache);
 						}
 						fieldCache.set(memberId, result);
+						if (memberByIdCache == null) {
+							memberByIdCache = new IntMap<Value>();
+							nativeMemberByIdCache.set(obj, memberByIdCache);
+						}
+						memberByIdCache.set(memberId, result);
 						return result;
 					}
 				}
@@ -254,12 +293,17 @@ class MemberResolver {
 				var result:Value;
 				if (!isFn) {
 					result = vm.haxeToValue(raw);
-					// Cache field values immediately
+					// Cache in ALL caches
 					if (fieldCache == null) {
 						fieldCache = new IntMap<Value>();
 						nativeFieldValueCache.set(obj, fieldCache);
 					}
 					fieldCache.set(memberId, result);
+					if (memberByIdCache == null) {
+						memberByIdCache = new IntMap<Value>();
+						nativeMemberByIdCache.set(obj, memberByIdCache);
+					}
+					memberByIdCache.set(memberId, result);
 					return result;
 				}
 				var capturedObj = obj;
@@ -268,12 +312,17 @@ class MemberResolver {
 					var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
 					return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
 				}));
-				// Cache method wrapper
+				// Cache method wrapper in ALL caches
 				if (fieldCache == null) {
 					fieldCache = new IntMap<Value>();
 					nativeFieldValueCache.set(obj, fieldCache);
 				}
 				fieldCache.set(memberId, result);
+				if (memberByIdCache == null) {
+					memberByIdCache = new IntMap<Value>();
+					nativeMemberByIdCache.set(obj, memberByIdCache);
+				}
+				memberByIdCache.set(memberId, result);
 				return result;
 
 			default:
@@ -313,10 +362,13 @@ class MemberResolver {
 				if (fieldName == null)
 					throw 'Unknown member id: $memberId';
 				Reflection.setField(obj, fieldName, vm.valueToHaxe(value));
-				// Invalidate field value cache for this member
+				// Invalidate ALL caches for this member
 				var fieldCache = nativeFieldValueCache.get(obj);
 				if (fieldCache != null)
 					fieldCache.remove(memberId);
+				var memberByIdCache = nativeMemberByIdCache.get(obj);
+				if (memberByIdCache != null)
+					memberByIdCache.remove(memberId);
 				var nativeClass = Type.getClass(obj);
 				if (nativeClass != null) {
 					var nativeClassName = Type.getClassName(nativeClass);
