@@ -361,7 +361,25 @@ class VM {
 		var instructionCount = this.instructionCount;
 		#end
 
+		// Stack overflow check macro - only enabled in debug builds
+		#if NXDEBUG
+		inline function checkStackOverflow(needed:Int) {
+			if (sp + needed > stack.length)
+				throw 'Stack overflow: sp=$sp, needed=$needed, max=${stack.length}';
+		}
+		#else
+		inline function checkStackOverflow(needed:Int) {
+			// No-op in release builds for performance
+		}
+		#end
+
 		while (true) {
+			#if NXDEBUG
+			// Bounds check for code access - debug only
+			if (ip + 1 >= code.length)
+				throw 'Code IP out of bounds: ip=$ip, length=${code.length}';
+			#end
+			
 			var op = code[ip++];
 			var arg = code[ip++];
 
@@ -379,15 +397,22 @@ class VM {
 
 			switch (op) {
 				case Op.LOAD_CONST:
+					#if NXDEBUG
+					if (arg < 0 || arg >= constants.length)
+						throw 'Constant index out of bounds: $arg';
+					#end
 					stack[sp++] = constants[arg];
 
 				case Op.LOAD_LOCAL:
+					checkStackOverflow(1);
 					stack[sp++] = stack[frameBase + arg];
 
 				case Op.LOAD_GLOBAL:
+					checkStackOverflow(1);
 					stack[sp++] = (arg >= 0 && arg < globalSlotValues.length) ? globalSlotValues[arg] : VNull;
 
 				case Op.LOAD_UPVALUE:
+					checkStackOverflow(1);
 					stack[sp++] = (arg >= 0 && arg < currentUpvalues.length) ? currentUpvalues[arg] : VNull;
 
 				case Op.STORE_LOCAL:
@@ -428,7 +453,7 @@ class VM {
 				case Op.LOAD_VAR:
 					var name = strings[arg];
 					// Inline getVariable with single .get() per map (no exists+get overhead)
-					var value:Value = currentLocalVars != EMPTY_MAP ? currentLocalVars.get(name) : null;
+					var value:Value = (currentLocalVars != null && currentLocalVars != EMPTY_MAP) ? currentLocalVars.get(name) : null;
 					if (value == null) {
 						value = scopeVars.get(name);
 						if (value == null) {
@@ -563,6 +588,11 @@ class VM {
 						case VNumber(x):
 							switch (b) {
 								case VNumber(y):
+									// Strict mode: check for division by zero
+									#if NXDEBUG
+									if (y == 0)
+										throw 'Are we, are.... are... are we deadass? Division by zero!';
+									#end
 									// IEEE 754: n/0 = Inf, 0/0 = NaN (match JS/Haxe float behaviour)
 									stack[sp++] = VNumber(x / y);
 								default:
