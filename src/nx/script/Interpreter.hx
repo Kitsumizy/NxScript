@@ -75,6 +75,20 @@ class Interpreter {
 		vm.gc();
 
 	/**
+	 * Compiler optimization flags.
+	 * Set these before running scripts to enable optimizations.
+	 * 
+	 * Example:
+	 *   var interp = new Interpreter();
+	 *   interp.optimize = true;  // Enable all optimizations
+	 *   interp.run(sourceCode);
+	 */
+	public var optimize:Bool = false;
+	public var optimizeDCE:Bool = true;  // Dead code elimination
+	public var optimizeConstantFolding:Bool = true;  // Constant folding
+	public var optimizePeephole:Bool = true;  // Peephole optimization
+
+	/**
 	 * Run a script function once per native Haxe object — loop executes in Haxe, not in script.
 	 *
 	 * This is the fix for the "10k sprites = 24fps" problem. The script loop:
@@ -584,6 +598,11 @@ class Interpreter {
 
 			// Compile to bytecode
 			var compiler = new Compiler();
+			// Apply optimization settings from Interpreter
+			compiler.optimize = optimize;
+			compiler.dce = optimizeDCE;
+			compiler.constantFolding = optimizeConstantFolding;
+			compiler.peephole = optimizePeephole;
 			var chunk = compiler.compile(ast);
 
 			// Register static global names so reset_context() preserves them
@@ -1076,6 +1095,11 @@ class Interpreter {
 
 		// Compile to bytecode
 		var compiler = new Compiler();
+		// Apply optimization settings from Interpreter
+		compiler.optimize = optimize;
+		compiler.dce = optimizeDCE;
+		compiler.constantFolding = optimizeConstantFolding;
+		compiler.peephole = optimizePeephole;
 		var chunk = compiler.compile(ast);
 
 		return chunk;
