@@ -57,9 +57,16 @@
 - Cache invalidation on field set operations
 
 ### 3. ✅ Test Fixes
-- **All 243 tests now passing** (was 240/243)
+- **All 243 tests passing** (was 240/243)
 - Fixed syntax error in VM.hx that was causing 3 sandbox tests to fail
 - Tests: sandbox blocks Sys, Int_from(3.5), fromInt(2.5)
+
+### 4. ✅ Compiler Optimizations (NEW)
+- **Constant Folding**: Arithmetic on literals computed at compile time
+- **Peephole Optimization**: Removes redundant instruction sequences
+- **Dead Code Elimination**: Removes unreachable code after RETURN/THROW
+- **Exported to Interpreter**: `interp.optimize = true` to enable
+- All tests pass with optimizations enabled (243/243) ✅
 
 ---
 
@@ -73,6 +80,8 @@
 
 ## Recent Commits
 
+- `c799bca` - Export compiler optimization options to Interpreter
+- `a75975e` - Feat: Add compiler optimizations (disabled by default)
 - `7fbff63` - All tests passing + Native object field caching
 - `42d324b` - docs: Update TODO.md
 - `3c709a9` - Hot path improvements and profiling support
@@ -108,5 +117,26 @@ Instruction breakdown:
   ...
 ═══════════════════════════════════════
 ```
+
+---
+
+## Compiler Optimizations Usage
+
+```haxe
+var interp = new Interpreter();
+
+// Enable all optimizations
+interp.optimize = true;
+
+// Or configure individually
+interp.optimizeDCE = true;              // Dead code elimination
+interp.optimizeConstantFolding = true;  // Constant folding
+interp.optimizePeephole = true;         // Peephole optimization
+
+interp.run(sourceCode);
+```
+
+**Default**: All optimizations disabled (safe mode)
+**Performance**: Expected 10-30% improvement on compute-heavy code when enabled
 
 Last updated: 2026-05-11
