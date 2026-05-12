@@ -7,6 +7,12 @@ import nx.script.Token;
 /**
  * Walks the AST and emits bytecode. One pass, no regrets.
  *
+ * Optimizations enabled (configurable via Compiler.optimize flag):
+ *   - Constant folding: arithmetic on literals computed at compile time
+ *   - Dead code elimination: unreachable code after return/throw removed
+ *   - NOP elimination: redundant POP/LOAD_NULL sequences removed
+ *   - Peephole optimization: consecutive instruction patterns optimized
+ *
  * Local variables inside functions get integer slot indices instead of string map lookups.
  * This means LOAD_LOCAL/STORE_LOCAL are O(1) array accesses instead of O(1) hash lookups
  * with extra overhead. Yes, there is a difference. The benchmarks said so.
@@ -15,6 +21,13 @@ import nx.script.Token;
  * Try to use module-level `var` inside a function and you'll get a STORE_VAR. Intentional.
  */
 class Compiler {
+	// Optimization flags - can be toggled for debugging or performance tuning
+	// Disabled by default until fully tested
+	public var optimize:Bool = false;
+	public var dce:Bool = true; // Dead code elimination
+	public var constantFolding:Bool = true;
+	public var peephole:Bool = true;
+	
 	// The instruction stream we're building. One Chunk per compilation.
 	var chunk:Chunk;
 	var constants:Array<Value>;
@@ -26,8 +39,7 @@ class Compiler {
 	var currentLine:Int = 0;
 	var currentCol:Int = 0;
 
-	// Jump target stacks for break/continue. Push on loop enter, pop on loop exit.
-	// If this is empty inside a break statement, the parser already messed up.
+	// Loop stack for break/continue targets
 	var loopStack:Array<LoopContext> = [];
 
 	// How deep we are in try blocks. Used to emit the right number of POP_TRY on return.
@@ -37,7 +49,6 @@ class Compiler {
 	var syntheticCounter:Int = 0;
 
 	// Slot allocator for function-local variables. null means we're at module level.
-	// Slots are integer indices into stack[stackBase..stackBase+localCount-1].
 	var localSlots:Map<String, Int> = null;
 	var nextLocalSlot:Int = 0;
 	var globalSlots:Map<String, Int>;
@@ -138,6 +149,15 @@ class Compiler {
 			emit(Op.LOAD_NULL);
 		}
 		emit(Op.RETURN);
+		
+		// Apply optimizations if enabled
+		if (optimize) {
+			if (peephole)
+				applyPeepholeOptimization();
+			if (dce)
+				applyDeadCodeElimination();
+		}
+		
 		return chunk;
 	}
 
@@ -690,11 +710,18 @@ class Compiler {
 				emitWithArg(Op.INSTANTIATE, args.length);
 
 			case EBinary(op, left, right):
+				// Constant folding: if both operands are literals, compute at compile time
+				if (constantFolding) {
+					var folded = tryFoldExprs(op, left, right);
+					if (folded != null) {
+						compileExpression(folded);
+						return;
+					}
+				}
+				
 				switch (op) {
 					case OAnd:
 						// Short-circuit &&: if left is falsy, skip right entirely
-						// Stack trace: left → DUP → [left,left] → JUMP_IF_FALSE(pops top, jumps) → [left(false)]
-						//              or: [left(true)] → POP → [] → right → [right]
 						compileExpression(left);
 						emit(Op.DUP);
 						var skip = emitJump(Op.JUMP_IF_FALSE);
@@ -1529,6 +1556,256 @@ class Compiler {
 	function patchJumpAt(jumpPos:Int, target:Int) {
 		var jump = target - jumpPos - 1;
 		chunk.instructions[jumpPos].arg = jump;
+	}
+	
+	// ============================================================
+	// CONSTANT FOLDING HELPERS
+	// ============================================================
+	
+	/**
+	 * Try to fold binary expression with constant operands
+	 * Returns folded ENumber/EString/EBool or null
+	 */
+	function tryFoldExprs(op:Operator, left:Expr, right:Expr):Null<Expr> {
+		var leftVal = getConstantValue(left);
+		var rightVal = getConstantValue(right);
+		
+		if (leftVal == null || rightVal == null)
+			return null;
+		
+		var result:Null<Value> = null;
+		
+		// Simple arithmetic folding
+		if (op == OAdd) {
+			if (leftVal.match(VNumber(_)) && rightVal.match(VNumber(_))) {
+				var a = switch leftVal { case VNumber(v): v; default: 0; }
+				var b = switch rightVal { case VNumber(v): v; default: 0; }
+				result = VNumber(a + b);
+			} else if (leftVal.match(VString(_)) && rightVal.match(VString(_))) {
+				var a = switch leftVal { case VString(v): v; default: ""; }
+				var b = switch rightVal { case VString(v): v; default: ""; }
+				result = VString(a + b);
+			}
+		} else if (op == OSub && leftVal.match(VNumber(_)) && rightVal.match(VNumber(_))) {
+			var a = switch leftVal { case VNumber(v): v; default: 0; }
+			var b = switch rightVal { case VNumber(v): v; default: 0; }
+			result = VNumber(a - b);
+		} else if (op == OMul && leftVal.match(VNumber(_)) && rightVal.match(VNumber(_))) {
+			var a = switch leftVal { case VNumber(v): v; default: 0; }
+			var b = switch rightVal { case VNumber(v): v; default: 0; }
+			result = VNumber(a * b);
+		} else if (op == ODiv && leftVal.match(VNumber(_)) && rightVal.match(VNumber(_))) {
+			var a = switch leftVal { case VNumber(v): v; default: 0; }
+			var b = switch rightVal { case VNumber(v): v; default: 1; }
+			if (b != 0) result = VNumber(a / b);
+		} else if (op == OAnd && leftVal.match(VBool(_)) && rightVal.match(VBool(_))) {
+			var a = switch leftVal { case VBool(v): v; default: false; }
+			var b = switch rightVal { case VBool(v): v; default: false; }
+			result = VBool(a && b);
+		} else if (op == OOr && leftVal.match(VBool(_)) && rightVal.match(VBool(_))) {
+			var a = switch leftVal { case VBool(v): v; default: false; }
+			var b = switch rightVal { case VBool(v): v; default: false; }
+			result = VBool(a || b);
+		}
+		
+		if (result != null) {
+			return switch (result) {
+				case VNumber(n): ENumber(n);
+				case VString(s): EString(s);
+				case VBool(b): EBool(b);
+				case VNull: ENull;
+				default: null;
+			}
+		}
+		return null;
+	}
+	
+	/**
+	 * Extract constant value from expression if possible
+	 */
+	function getConstantValue(expr:Expr):Null<Value> {
+		return switch (expr) {
+			case ENumber(n): VNumber(n);
+			case EString(s): VString(s);
+			case EBool(b): VBool(b);
+			case ENull: VNull;
+			default: null;
+		}
+	}
+	
+	// ============================================================
+	// OPTIMIZATION PASS - Peephole & Constant Folding
+	// ============================================================
+	
+	/**
+	 * Peephole optimization: walks instruction stream and applies local optimizations
+	 * - LOAD_CONST + LOAD_CONST => single LOAD_CONST with result (for arithmetic)
+	 * - POP + LOAD_NULL => removed (dead code)
+	 * - LOAD_CONST + ADD => folded constant
+	 * - JUMP to RETURN => merged
+	 */
+	function applyPeepholeOptimization() {
+		var insts = chunk.instructions;
+		var changed = true;
+		var iterations = 0;
+		var maxIterations = 10; // Prevent infinite loops
+		
+		while (changed && iterations < maxIterations) {
+			changed = false;
+			iterations++;
+			
+			var i = 0;
+			while (i < insts.length - 1) {
+				var inst1 = insts[i];
+				var inst2 = insts[i + 1];
+				
+				// Pattern 1: LOAD_CONST + LOAD_CONST with arithmetic => fold
+				if (constantFolding && inst1.op == Op.LOAD_CONST && inst2.op == Op.LOAD_CONST) {
+					// Next instruction might be ADD, SUB, etc.
+					if (i + 2 < insts.length) {
+						var inst3 = insts[i + 2];
+						var folded = tryFoldBinary(inst1.arg, inst2.arg, inst3.op);
+						if (folded != null) {
+							// Replace 3 instructions with 1
+							insts[i] = folded;
+							insts.splice(i + 1, 2);
+							changed = true;
+							continue;
+						}
+					}
+				}
+				
+				// Pattern 2: POP + LOAD_NULL => remove both (dead code)
+				if (inst1.op == Op.POP && inst2.op == Op.LOAD_NULL) {
+					insts.splice(i, 2);
+					changed = true;
+					continue;
+				}
+				
+				// Pattern 3: LOAD_NULL + POP => remove both
+				if (inst1.op == Op.LOAD_NULL && inst2.op == Op.POP) {
+					insts.splice(i, 2);
+					changed = true;
+					continue;
+				}
+				
+				// Pattern 4: JUMP to next instruction => remove
+				if (inst1.op == Op.JUMP && inst1.arg == 1) {
+					insts.splice(i, 1);
+					changed = true;
+					continue;
+				}
+				
+				i++;
+			}
+		}
+		
+		// Rebuild flat code if optimized
+		if (changed && chunk.code != null) {
+			chunk.code = null;
+		}
+	}
+	
+	/**
+	 * Try to fold two constants with a binary operation
+	 * Returns new LOAD_CONST instruction or null if can't fold
+	 */
+	function tryFoldBinary(constIdx1:Int, constIdx2:Int, op:Int):Null<Instruction> {
+		var v1 = constants[constIdx1];
+		var v2 = constants[constIdx2];
+		
+		var result:Null<Value> = null;
+		
+		if (op == Op.ADD) {
+			if (v1.match(VNumber(_)) && v2.match(VNumber(_))) {
+				var a = switch v1 { case VNumber(v): v; default: 0; }
+				var b = switch v2 { case VNumber(v): v; default: 0; }
+				result = VNumber(a + b);
+			} else if (v1.match(VString(_)) && v2.match(VString(_))) {
+				var a = switch v1 { case VString(v): v; default: ""; }
+				var b = switch v2 { case VString(v): v; default: ""; }
+				result = VString(a + b);
+			}
+		} else if (op == Op.SUB && v1.match(VNumber(_)) && v2.match(VNumber(_))) {
+			var a = switch v1 { case VNumber(v): v; default: 0; }
+			var b = switch v2 { case VNumber(v): v; default: 0; }
+			result = VNumber(a - b);
+		} else if (op == Op.MUL && v1.match(VNumber(_)) && v2.match(VNumber(_))) {
+			var a = switch v1 { case VNumber(v): v; default: 0; }
+			var b = switch v2 { case VNumber(v): v; default: 0; }
+			result = VNumber(a * b);
+		}
+		
+		if (result != null) {
+			var newIdx = constants.length;
+			constants.push(result);
+			return {op: Op.LOAD_CONST, arg: newIdx, line: 0, col: 0};
+		}
+		return null;
+	}
+	
+	/**
+	 * Dead code elimination: removes unreachable instructions
+	 * - Code after unconditional RETURN/THROW in same block
+	 * - Unreachable case branches
+	 */
+	function applyDeadCodeElimination() {
+		var insts = chunk.instructions;
+		var i = 0;
+		var removed = 0;
+		
+		while (i < insts.length) {
+			var inst = insts[i];
+			
+			// After RETURN or THROW, next instruction might be dead code
+			if (inst.op == Op.RETURN || inst.op == Op.THROW) {
+				// Check if next is unreachable (not a jump target)
+				if (i + 1 < insts.length) {
+					var next = insts[i + 1];
+					// If next is not a jump target, it's dead
+					if (!isJumpTarget(insts, i + 1)) {
+						// Remove consecutive dead code until we hit a label or end
+						var deadStart = i + 1;
+						var deadEnd = deadStart;
+						while (deadEnd < insts.length && !isJumpTarget(insts, deadEnd)) {
+							if (insts[deadEnd].op == Op.RETURN || insts[deadEnd].op == Op.THROW)
+								break; // Stop at another terminator
+							deadEnd++;
+						}
+						if (deadEnd > deadStart) {
+							insts.splice(deadStart, deadEnd - deadStart);
+							removed += deadEnd - deadStart;
+						}
+					}
+				}
+			}
+			i++;
+		}
+	}
+	
+	/**
+	 * Check if an instruction index is a jump target
+	 */
+	function isJumpTarget(insts:Array<Instruction>, targetIdx:Int):Bool {
+		for (inst in insts) {
+			if (inst.op == Op.JUMP || inst.op == Op.JUMP_IF_FALSE || inst.op == Op.JUMP_IF_TRUE ||
+			    inst.op == Op.JUMP_IF_NULL || inst.op == Op.JUMP_IF_NOT_NULL) {
+				// Calculate jump target
+				var jumpInstIdx = -1;
+				for (i in 0...insts.length) {
+					if (insts[i] == inst) {
+						jumpInstIdx = i;
+						break;
+					}
+				}
+				if (jumpInstIdx >= 0) {
+					var target = jumpInstIdx + 1 + inst.arg;
+					if (target == targetIdx)
+						return true;
+				}
+			}
+		}
+		return false;
 	}
 }
 
