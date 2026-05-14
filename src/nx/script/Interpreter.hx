@@ -184,7 +184,17 @@ class Interpreter {
 	 *   interp.run('trace(myField)');  // reads from parent
 	 *   interp.run('myField = 5');     // writes to parent
 	 */
-	public var parent:Null<Dynamic> = null;
+	public var parent(get, set):Null<Dynamic>;
+	var _parent:Null<Dynamic> = null;
+
+	function get_parent():Null<Dynamic>
+		return _parent;
+
+	function set_parent(v:Null<Dynamic>):Null<Dynamic> {
+		_parent = v;
+		vm.parent = v;
+		return v;
+	}
 	public function new(debug:Bool = false, strict:Bool = false) {
 		this.debug = debug;
 		this.strictByDefault = strict;
@@ -1000,14 +1010,14 @@ class Interpreter {
 		var savedStaticNames = vm.staticNames;
 
 		// Snapshot parent reference
-		var savedParent = this.parent;
+		var savedParent = this._parent;
 
 		// Rebuild VM
 		this.vm = new VM(debug);
 		registerBuiltins();
 
 		// Restore parent reference
-		this.parent = savedParent;
+		this._parent = savedParent;
 		this.vm.parent = savedParent;
 
 		// Restore statics
