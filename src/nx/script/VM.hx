@@ -114,6 +114,13 @@ class VM {
 	public var sandboxBlocklist:Map<String, Bool> = new Map();
 
 	/**
+	 * Parent scope object for variable lookups.
+	 * When a variable is not found in local scope, the VM checks this object's fields
+	 * before falling back to globals/natives. Set via `Interpreter.parent`.
+	 */
+	public var parent:Null<Dynamic> = null;
+
+	/**
 	 * Enable sandbox with sensible defaults in one call.
 	 * Blocks: Sys, sys, File, FileSystem, Http, Socket, Process.
 	 * Sets maxInstructions=500_000, maxCallDepth=256.
@@ -452,19 +459,27 @@ class VM {
 					}
 					currentUpvalues[arg] = upValue;
 
-				//  Might want to change this nesting its somewhat expensive.
-				case Op.LOAD_VAR:
-					var name = strings[arg];
-					// Inline getVariable with single .get() per map (no exists+get overhead)
-					var value:Value = (currentLocalVars != null && currentLocalVars != EMPTY_MAP) ? currentLocalVars.get(name) : null;
+			//  Might want to change this nesting its somewhat expensive.
+			case Op.LOAD_VAR:
+				var name = strings[arg];
+				// Inline getVariable with single .get() per map (no exists+get overhead)
+				var value:Value = (currentLocalVars != null && currentLocalVars != EMPTY_MAP) ? currentLocalVars.get(name) : null;
+				if (value == null) {
+					value = scopeVars.get(name);
 					if (value == null) {
-						value = scopeVars.get(name);
+						value = constVars.get(name);
 						if (value == null) {
-							value = constVars.get(name);
+							// Sandbox check before parent/globals/natives (inlined path must respect blocklist)
+							if (sandboxed && sandboxBlocklist.exists(name))
+								throw 'Sandbox: access to "$name" is not allowed';
+							// Check parent scope object before falling back to globals
+							if (parent != null) {
+								var parentValue = Reflect.field(parent, name);
+								if (parentValue != null) {
+									value = haxeToValue(parentValue);
+								}
+							}
 							if (value == null) {
-								// Sandbox check before globals/natives (inlined path must respect blocklist)
-								if (sandboxed && sandboxBlocklist.exists(name))
-									throw 'Sandbox: access to "$name" is not allowed';
 								value = globals.get(name);
 								if (value == null) {
 									value = natives.get(name);
@@ -485,35 +500,46 @@ class VM {
 							}
 						}
 					}
-					stack[sp++] = value;
+				}
+				stack[sp++] = value;
 
-				case Op.STORE_VAR:
-					var name = strings[arg];
-					var value = stack[sp - 1];
-					// Inline setVariable: update in-place if it's a scope var, otherwise global
-					if (constVars.exists(name))
-						throw 'Cannot reassign constant: $name';
-					if (scopeVars.exists(name)) {
-						scopeVars.set(name, value);
-						if (currentLocalVars == EMPTY_MAP) {
-							currentLocalVars = new Map<String, Value>();
-							currentFrame.localVars = currentLocalVars;
-						}
-						currentLocalVars.set(name, value);
-					} else {
-						var thisValue:Value = currentLocalVars != EMPTY_MAP ? currentLocalVars.get("this") : null;
-						if (thisValue != null) {
-							var currentMember = memberResolver.getMember(thisValue, name);
-							switch (currentMember) {
-								case VNull:
-									globals.set(name, value);
-								default:
-									memberResolver.setMember(thisValue, name, value);
+		case Op.STORE_VAR:
+			var name = strings[arg];
+			var value = stack[sp - 1];
+			// Inline setVariable: update in-place if it's a scope var, otherwise global
+			if (constVars.exists(name))
+				throw 'Cannot reassign constant: $name';
+			if (scopeVars.exists(name)) {
+				scopeVars.set(name, value);
+				if (currentLocalVars == EMPTY_MAP) {
+					currentLocalVars = new Map<String, Value>();
+					currentFrame.localVars = currentLocalVars;
+				}
+				currentLocalVars.set(name, value);
+			} else {
+				var thisValue:Value = currentLocalVars != EMPTY_MAP ? currentLocalVars.get("this") : null;
+				if (thisValue != null) {
+					var currentMember = memberResolver.getMember(thisValue, name);
+					switch (currentMember) {
+						case VNull:
+							// Check if we should write to parent object
+							if (parent != null && Reflect.field(parent, name) != null) {
+								Reflect.setField(parent, name, valueToHaxe(value));
+							} else {
+								globals.set(name, value);
 							}
-						} else {
-							globals.set(name, value);
-						}
+						default:
+							memberResolver.setMember(thisValue, name, value);
 					}
+				} else {
+					// No 'this' context - check if we should write to parent object
+					if (parent != null && Reflect.field(parent, name) != null) {
+						Reflect.setField(parent, name, valueToHaxe(value));
+					} else {
+						globals.set(name, value);
+					}
+				}
+			}
 
 				case Op.STORE_LET:
 					var name = strings[arg];
@@ -1120,46 +1146,50 @@ class VM {
 					}
 					stack[sp++] = VDict(map);
 
-			case Op.GET_MEMBER:
-				var field = resolveMemberRuntimeName(members, strings, arg);
-				var object = stack[--sp];
-				#if nx_profile
-				memberAccessCount++;
-				#end
-				
-				// HOTPATH: Direct native access - no MemberResolver overhead
-				var result:Value = switch (object) {
-					case VNativeObject(obj):
-						// Inline native field access - this is THE hotpath
+		case Op.GET_MEMBER:
+			var field = resolveMemberRuntimeName(members, strings, arg);
+			var object = stack[--sp];
+			#if nx_profile
+			memberAccessCount++;
+			#end
+			
+			// Sandbox check for native object members (e.g. obj.destroy() when obj is blocked)
+			if (sandboxed && sandboxBlocklist.exists(field))
+				throw 'Sandbox: access to member "$field" is not allowed';
+			
+			// HOTPATH: Direct native access - no MemberResolver overhead
+			var result:Value = switch (object) {
+				case VNativeObject(obj):
+					// Inline native field access - this is THE hotpath
+					#if cpp
+					var raw:Dynamic = untyped __cpp__("({0})->__Field({1}, hx::paccAlways)", obj, field);
+					#else
+					var raw:Dynamic = Reflect.getProperty(obj, field);
+					if (raw == null) raw = Reflect.field(obj, field);
+					#end
+					
+					if (raw == null) {
+						VNull;
+					} else {
 						#if cpp
-						var raw:Dynamic = untyped __cpp__("({0})->__Field({1}, hx::paccAlways)", obj, field);
+						var isFn = raw != null && raw.__GetType() == ObjectType.vtFunction;
 						#else
-						var raw:Dynamic = Reflect.getProperty(obj, field);
-						if (raw == null) raw = Reflect.field(obj, field);
+						var isFn = Reflect.isFunction(raw);
 						#end
 						
-						if (raw == null) {
-							VNull;
+						if (isFn) {
+							VNativeFunction(field, -1, (args:Array<Value>) -> {
+								var haxeArgs = [for (a in args) valueToHaxe(a)];
+								return haxeToValue(Reflection.callMethod(obj, raw, haxeArgs));
+							});
 						} else {
-							#if cpp
-							var isFn = raw != null && raw.__GetType() == ObjectType.vtFunction;
-							#else
-							var isFn = Reflect.isFunction(raw);
-							#end
-							
-							if (isFn) {
-								VNativeFunction(field, -1, (args:Array<Value>) -> {
-									var haxeArgs = [for (a in args) valueToHaxe(a)];
-									return haxeToValue(Reflection.callMethod(obj, raw, haxeArgs));
-								});
-							} else {
-								haxeToValue(raw);
-							}
+							haxeToValue(raw);
 						}
-					default:
-						getMember(object, field);
-				}
-				stack[sp++] = result;
+					}
+				default:
+					getMember(object, field);
+			}
+			stack[sp++] = result;
 
 			case Op.SET_MEMBER:
 				var field = resolveMemberRuntimeName(members, strings, arg);
@@ -1712,6 +1742,12 @@ class VM {
 			return constVars.get(name);
 		if (sandboxed && sandboxBlocklist.exists(name))
 			throw 'Sandbox: access to "$name" is not allowed';
+		// Check parent scope object before falling back to globals
+		if (parent != null) {
+			var parentValue = Reflect.field(parent, name);
+			if (parentValue != null)
+				return haxeToValue(parentValue);
+		}
 		if (globals.exists(name))
 			return globals.get(name);
 		if (natives.exists(name))
@@ -1728,6 +1764,17 @@ class VM {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Check if a name should be treated as a parent method/field (not overridable by script).
+	 * Returns true if the name exists in the parent object.
+	 */
+	public function isParentMember(name:String):Bool {
+		if (parent != null) {
+			return Reflect.field(parent, name) != null;
+		}
+		return false;
 	}
 
 	function setVariable(name:String, value:Value, isConst:Bool) {

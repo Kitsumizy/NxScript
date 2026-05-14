@@ -154,6 +154,10 @@ class MemberResolver {
 				if (field == null)
 					throw 'Unknown member id: $memberId';
 
+				// Sandbox check for blocked members (e.g. destroy(), etc.)
+				if (vm.sandboxed && vm.sandboxBlocklist.exists(field))
+					throw 'Sandbox: access to member "$field" is not allowed';
+
 				// Array hotpath - check if native object is actually an Array
 				// vtArray = 4 in hxcpp's ObjectType enum
 				#if cpp

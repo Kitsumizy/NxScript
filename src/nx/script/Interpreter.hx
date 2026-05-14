@@ -128,8 +128,9 @@ class Interpreter {
 		return vm.safeCall(name, args);
 
 	/** Enable sandbox mode — blocks filesystem/network natives, limits instructions. */
-	public function enableSandbox(?extraBlocklist:Array<String>):Void
+	public function enableSandbox(?extraBlocklist:Array<String>):Void {
 		vm.enableSandbox(extraBlocklist);
+	}
 
 	/**
 	 * Wrap a single native Haxe object (e.g. FlxSprite) as a VDict proxy.
@@ -170,6 +171,15 @@ class Interpreter {
 	/** Preprocessor defines for #if/#end directives. Pre-populated from compile target. */
 	public var defines:Map<String, Bool> = Preprocessor.defaultDefines();
 
+	/**
+	 * Parent scope object for variable lookups.
+	 * When a variable is not found in the local scope, it searches this object's fields,
+	 * then falls back to global scope. Useful for exposing Haxe objects as a parent scope.
+	 * 
+	 * Lookup chain: local scope → parent object fields → global scope
+	 */
+	public var parent:Null<Dynamic> = null;
+
 	public function new(debug:Bool = false, strict:Bool = false) {
 		this.debug = debug;
 		this.strictByDefault = strict;
@@ -178,6 +188,16 @@ class Interpreter {
 
 		// Register built-in functions
 		registerBuiltins();
+	}
+
+	/**
+	 * Set the parent scope object for variable lookups.
+	 * Fluent API for setting parent.
+	 */
+	public function withParent(p:Dynamic):Interpreter {
+		this.parent = p;
+		this.vm.parent = p;
+		return this;
 	}
 
 	/**
@@ -957,6 +977,7 @@ class Interpreter {
 	 *  - All class definitions are preserved (re-injected into new VM globals)
 	 *  - Static fields on classes are preserved (they live in ClassData, not globals)
 	 *  - Natives registered via interp.register() are re-registered
+	 *  - Parent scope reference is preserved
 	 */
 	public function reset_context() {
 		// Snapshot what to preserve
@@ -974,9 +995,16 @@ class Interpreter {
 		// Snapshot static names list
 		var savedStaticNames = vm.staticNames;
 
+		// Snapshot parent reference
+		var savedParent = this.parent;
+
 		// Rebuild VM
 		this.vm = new VM(debug);
 		registerBuiltins();
+
+		// Restore parent reference
+		this.parent = savedParent;
+		this.vm.parent = savedParent;
 
 		// Restore statics
 		vm.staticNames = savedStaticNames;
