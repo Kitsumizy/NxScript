@@ -70,9 +70,9 @@ class Main {
 			var cli = new CLI("NxScript", "NxScript CLI", haxelib_json.version);
 			cli.addDefaults();
 			var test = cli.addCommand("test", "Run tests all tests.", (cli, args, flags) -> {
-				var path = lib_dir() + "test/tests/test_suite.hxml";
+				var path = lib_dir() + "test/tests/config/test_suite.hxml";
 				Sys.setCwd(lib_dir() + "test/tests/");
-				Sys.command("haxe " + path);
+				Sys.command("haxe config/test_suite.hxml");
 			});
 
 			var runCmd = cli.addCommand("run", "Run a script file", (cli, args, flags) -> {
