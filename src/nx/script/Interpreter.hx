@@ -177,13 +177,14 @@ class Interpreter {
 	 * then falls back to global scope. Useful for exposing Haxe objects as a parent scope.
 	 * 
 	 * Lookup chain: local scope → parent object fields → global scope
+	 * 
+	 * Example:
+	 *   var interp = new Interpreter();
+	 *   interp.parent = this;  // or any object with fields/methods
+	 *   interp.run('trace(myField)');  // reads from parent
+	 *   interp.run('myField = 5');     // writes to parent
 	 */
-	public var parent(default, set):Null<Dynamic> = null;
-	public function set_parent(p:Dynamic):Null<Dynamic> {
-		this.parent = p;
-		this.vm.parent = p;
-		return p;
-	}
+	public var parent:Null<Dynamic> = null;
 	public function new(debug:Bool = false, strict:Bool = false) {
 		this.debug = debug;
 		this.strictByDefault = strict;
@@ -194,6 +195,14 @@ class Interpreter {
 		registerBuiltins();
 	}
 
+	/**
+	 * Set the parent scope object for variable lookups.
+	 * Fluent API for setting parent.
+	 */
+	public function withParent(p:Dynamic):Interpreter {
+		this.parent = p;
+		return this;
+	}
 
 	/**
 	 * Registers all built-in global functions (trace, print, len, range, type, math stuff, etc).
