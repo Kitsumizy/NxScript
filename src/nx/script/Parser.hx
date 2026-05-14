@@ -1237,9 +1237,9 @@ class Parser {
 		var body:Array<Stmt> = [];
 		while (!isEOF() && !check(TRightBrace) && !check(TKeyword(KCase)) && !check(TKeyword(KDefault))) {
 			var stmt = parseStatement();
-			consumeStatementTerminator(stmt);
-			body.push(stmt);
+			// Switch cases don't require semicolons - they're terminated by next case/default or }
 			skipSeparators();
+			body.push(stmt);
 		}
 		return body;
 	}

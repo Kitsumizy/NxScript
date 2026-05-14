@@ -7,48 +7,42 @@ import nx.script.Bytecode.ClassData;
 import nx.script.Bytecode.FunctionChunk;
 import nx.script.Bytecode.Value;
 
+#if cpp
+import cpp.ObjectType;
+#end
+
 /**
- * Resolves members for heavier object kinds: instances, classes, and native Haxe objects.
- * Uses member IDs internally and only falls back to names when required by backing storage.
+ * Minimal member resolver - direct access with simple cache.
+ * No complex hierarchies, just cache what we access.
  */
 class MemberResolver {
 	static inline var NATIVE_SUPER_INSTANCE_FIELD = "__native_super_instance";
 
-	// Cache for native class fields to avoid expensive Type.getInstanceFields() calls in hot path
+	// Cache for native class fields - avoids Type.getInstanceFields() in hot path
 	static var nativeFieldsCache:Map<String, Array<String>> = new Map();
 	
-	// NEW: Direct memberId -> field/value cache for native objects (bypasses name resolution)
-	var nativeMemberByIdCache:ObjectMap<Dynamic, IntMap<Value>>;
+	// Simple per-object cache: obj -> (memberId -> Value)
+	// This is the hotpath - caches field values AND method wrappers
+	var nativeCache:ObjectMap<Dynamic, IntMap<Value>>;
 
 	var vm:VM;
 	var classStaticMethodCache:ObjectMap<ClassData, IntMap<Value>>;
 	var instanceClassMethodCache:ObjectMap<ClassData, IntMap<Null<FunctionChunk>>>;
 	var instanceMethodCache:ObjectMap<Dynamic, IntMap<Value>>;
-	var nativeObjectMethodCache:ObjectMap<Dynamic, IntMap<Value>>;
-	var nativeFieldKindCache:Map<String, IntMap<Bool>>;
-	// Direct field value cache for native objects - avoids Reflection.getField in hot path
-	var nativeFieldValueCache:ObjectMap<Dynamic, IntMap<Value>>;
 
 	public function new(vm:VM) {
 		this.vm = vm;
 		classStaticMethodCache = new ObjectMap();
 		instanceClassMethodCache = new ObjectMap();
 		instanceMethodCache = new ObjectMap();
-		nativeObjectMethodCache = new ObjectMap();
-		nativeFieldKindCache = new Map();
-		nativeFieldValueCache = new ObjectMap();
-		nativeMemberByIdCache = new ObjectMap();
+		nativeCache = new ObjectMap();
 	}
 
 	public function flush():Void {
 		classStaticMethodCache = new ObjectMap();
 		instanceClassMethodCache = new ObjectMap();
 		instanceMethodCache = new ObjectMap();
-		nativeObjectMethodCache = new ObjectMap();
-		nativeFieldKindCache = new Map();
-		nativeFieldValueCache = new ObjectMap();
-		nativeMemberByIdCache = new ObjectMap();
-		// Don't clear nativeFieldsCache - it's a global performance optimization
+		nativeCache = new ObjectMap();
 	}
 
 	inline function getNativeInstanceFields(nativeClass:Class<Dynamic>):Null<Array<String>> {
@@ -97,9 +91,6 @@ class MemberResolver {
 					if (classData.superClass != null && vm.classes.exists(classData.superClass))
 						superVal2 = VClass(vm.classes.get(classData.superClass));
 					else {
-						// For classes that directly extend a native base (e.g. FlxState),
-						// bind `super` to the attached native instance so calls like
-						// `super.add(obj)` work inside script overrides.
 						switch (fields.get(NATIVE_SUPER_INSTANCE_FIELD)) {
 							case VNativeObject(_):
 								superVal2 = fields.get(NATIVE_SUPER_INSTANCE_FIELD);
@@ -154,180 +145,83 @@ class MemberResolver {
 				return VNull;
 
 			case VNativeObject(obj):
-				// FAST PATH: Check member-by-id cache first (bypasses name resolution entirely)
-				var memberByIdCache = nativeMemberByIdCache.get(obj);
-				if (memberByIdCache != null && memberByIdCache.exists(memberId))
-					return memberByIdCache.get(memberId);
+				// HOTPATH: Check cache FIRST - this is the big win
+				var objCache = nativeCache.get(obj);
+				if (objCache != null && objCache.exists(memberId))
+					return objCache.get(memberId);
 				
-				var nativeCache = nativeObjectMethodCache.get(obj);
-				if (nativeCache != null && nativeCache.exists(memberId))
-					return nativeCache.get(memberId);
-
-				// Check field value cache second
-				var fieldCache = nativeFieldValueCache.get(obj);
-				if (fieldCache != null && fieldCache.exists(memberId))
-					return fieldCache.get(memberId);
-
 				var field = vm.resolveMemberName(memberId);
 				if (field == null)
 					throw 'Unknown member id: $memberId';
 
-				if (Std.isOfType(obj, Array)) {
+				// Array hotpath - check if native object is actually an Array
+				// vtArray = 4 in hxcpp's ObjectType enum
+				#if cpp
+				var isArray = untyped __cpp__("({0}).mPtr && ({0}).mPtr->__GetType() == 4", obj);
+				#else
+				var isArray = Std.isOfType(obj, Array);
+				#end
+				
+				if (isArray) {
 					var arr:Array<Dynamic> = cast obj;
-					switch (field) {
-						case "length": return VNumber(arr.length);
-						case "push": return cacheNativeMethodById(obj, memberId, VNativeFunction("push", 1, (args) -> {
-								arr.push(vm.valueToHaxe(args[0]));
-								return VNumber(arr.length);
-							}));
-						case "pop": return cacheNativeMethodById(obj, memberId,
-								VNativeFunction("pop", 0, (_) -> arr.length == 0 ? VNull : vm.haxeToValue(arr.pop())));
-						case "shift": return cacheNativeMethodById(obj, memberId,
-								VNativeFunction("shift", 0, (_) -> arr.length == 0 ? VNull : vm.haxeToValue(arr.shift())));
-						case "unshift": return cacheNativeMethodById(obj, memberId, VNativeFunction("unshift", 1, (args) -> {
-								arr.unshift(vm.valueToHaxe(args[0]));
-								return VNull;
-							}));
-						case "first": return arr.length > 0 ? vm.haxeToValue(arr[0]) : VNull;
-						case "last": return arr.length > 0 ? vm.haxeToValue(arr[arr.length - 1]) : VNull;
-						case "join": return cacheNativeMethodById(obj, memberId, VNativeFunction("join", 1, (args) -> {
-								var sep = switch (args[0]) {
-									case VString(s): s;
-									default: "";
-								};
-								return VString(arr.map(v -> Std.string(v)).join(sep));
-							}));
-						case "reverse": return cacheNativeMethodById(obj, memberId, VNativeFunction("reverse", 0, (_) -> {
-								arr.reverse();
-								return VNativeObject(arr);
-							}));
-						case "indexOf": return cacheNativeMethodById(obj, memberId,
-								VNativeFunction("indexOf", 1, (args) -> VNumber(arr.indexOf(vm.valueToHaxe(args[0])))));
-						case "contains" | "includes":
-							return cacheNativeMethodById(obj, memberId, VNativeFunction(field, 1, (args) -> VBool(arr.indexOf(vm.valueToHaxe(args[0])) >= 0)));
-						case "copy": return VNativeObject(arr.copy());
-						default:
+					var result = switch (field) {
+						case "length": VNumber(arr.length);
+						case "push": VNativeFunction("push", 1, (args) -> { arr.push(vm.valueToHaxe(args[0])); return VNumber(arr.length); });
+						case "pop": VNativeFunction("pop", 0, (_) -> arr.length == 0 ? VNull : vm.haxeToValue(arr.pop()));
+						case "shift": VNativeFunction("shift", 0, (_) -> arr.length == 0 ? VNull : vm.haxeToValue(arr.shift()));
+						case "unshift": VNativeFunction("unshift", 1, (args) -> { arr.unshift(vm.valueToHaxe(args[0])); return VNull; });
+						case "first": arr.length > 0 ? vm.haxeToValue(arr[0]) : VNull;
+						case "last": arr.length > 0 ? vm.haxeToValue(arr[arr.length - 1]) : VNull;
+						case "join": VNativeFunction("join", 1, (args) -> {
+							var sep = switch (args[0]) { case VString(s): s; default: ""; };
+							return VString(arr.map(v -> Std.string(v)).join(sep));
+						});
+						case "reverse": VNativeFunction("reverse", 0, (_) -> { arr.reverse(); return VNativeObject(arr); });
+						case "indexOf": VNativeFunction("indexOf", 1, (args) -> VNumber(arr.indexOf(vm.valueToHaxe(args[0]))));
+						case "contains" | "includes": VNativeFunction(field, 1, (args) -> VBool(arr.indexOf(vm.valueToHaxe(args[0])) >= 0));
+						case "copy": VNativeObject(arr.copy());
+						default: null;
 					}
-				}
-
-				var nativeClass = Type.getClass(obj);
-				var nativeClassName = nativeClass == null ? null : Type.getClassName(nativeClass);
-				var instanceFields:Array<String> = getNativeInstanceFields(nativeClass);
-				if (instanceFields != null && instanceFields.indexOf(field) >= 0) {
-					var reflectedField = Reflection.getField(obj, field);
-					if (reflectedField != null) {
-						if (Reflection.isFunction(reflectedField)) {
-							var capturedObj = obj;
-							var capturedFn = reflectedField;
-							var result = cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
-								var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
-								return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
-							}));
-							// Cache in ALL caches for maximum speed
-							if (fieldCache == null) {
-								fieldCache = new IntMap<Value>();
-								nativeFieldValueCache.set(obj, fieldCache);
-							}
-							fieldCache.set(memberId, result);
-							if (memberByIdCache == null) {
-								memberByIdCache = new IntMap<Value>();
-								nativeMemberByIdCache.set(obj, memberByIdCache);
-							}
-							memberByIdCache.set(memberId, result);
-							return result;
+					if (result != null) {
+						if (objCache == null) {
+							objCache = new IntMap<Value>();
+							nativeCache.set(obj, objCache);
 						}
-						var result = vm.haxeToValue(reflectedField);
-						// Cache value in ALL caches
-						if (fieldCache == null) {
-							fieldCache = new IntMap<Value>();
-							nativeFieldValueCache.set(obj, fieldCache);
-						}
-						fieldCache.set(memberId, result);
-						if (memberByIdCache == null) {
-							memberByIdCache = new IntMap<Value>();
-							nativeMemberByIdCache.set(obj, memberByIdCache);
-						}
-						memberByIdCache.set(memberId, result);
-						return result;
-					}
-				}
-				var kindCache = nativeClassName == null ? null : nativeFieldKindCache.get(nativeClassName);
-				if (kindCache != null && kindCache.exists(memberId) && kindCache.get(memberId)) {
-					var cachedFn = Reflection.getField(obj, field);
-					if (cachedFn != null && Reflection.isFunction(cachedFn)) {
-						var capturedObj = obj;
-						var capturedFn = cachedFn;
-						var result = cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
-							var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
-							return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
-						}));
-						// Cache in ALL caches
-						if (fieldCache == null) {
-							fieldCache = new IntMap<Value>();
-							nativeFieldValueCache.set(obj, fieldCache);
-						}
-						fieldCache.set(memberId, result);
-						if (memberByIdCache == null) {
-							memberByIdCache = new IntMap<Value>();
-							nativeMemberByIdCache.set(obj, memberByIdCache);
-						}
-						memberByIdCache.set(memberId, result);
+						objCache.set(memberId, result);
 						return result;
 					}
 				}
 
+				// Direct field access - no overhead
 				var raw:Dynamic = Reflection.getField(obj, field);
 				if (raw == null)
 					raw = Reflect.field(obj, field);
 				if (raw == null)
 					return VNull;
-				var isFn = Reflection.isFunction(raw);
-				if (kindCache == null && nativeClassName != null) {
-					kindCache = new IntMap<Bool>();
-					nativeFieldKindCache.set(nativeClassName, kindCache);
-				}
-				if (kindCache != null)
-					kindCache.set(memberId, isFn);
 				
-				// Cache the result
 				var result:Value;
-				if (!isFn) {
+				if (Reflection.isFunction(raw)) {
+					var capturedObj = obj;
+					var capturedFn = raw;
+					result = VNativeFunction(field, -1, (args:Array<Value>) -> {
+						var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
+						return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
+					});
+				} else {
 					result = vm.haxeToValue(raw);
-					// Cache in ALL caches
-					if (fieldCache == null) {
-						fieldCache = new IntMap<Value>();
-						nativeFieldValueCache.set(obj, fieldCache);
-					}
-					fieldCache.set(memberId, result);
-					if (memberByIdCache == null) {
-						memberByIdCache = new IntMap<Value>();
-						nativeMemberByIdCache.set(obj, memberByIdCache);
-					}
-					memberByIdCache.set(memberId, result);
-					return result;
 				}
-				var capturedObj = obj;
-				var capturedFn = raw;
-				result = cacheNativeMethodById(obj, memberId, VNativeFunction(field, -1, (args:Array<Value>) -> {
-					var haxeArgs = [for (a in args) vm.valueToHaxe(a)];
-					return vm.haxeToValue(Reflection.callMethod(capturedObj, capturedFn, haxeArgs));
-				}));
-				// Cache method wrapper in ALL caches
-				if (fieldCache == null) {
-					fieldCache = new IntMap<Value>();
-					nativeFieldValueCache.set(obj, fieldCache);
+				
+				// Cache for next time
+				if (objCache == null) {
+					objCache = new IntMap<Value>();
+					nativeCache.set(obj, objCache);
 				}
-				fieldCache.set(memberId, result);
-				if (memberByIdCache == null) {
-					memberByIdCache = new IntMap<Value>();
-					nativeMemberByIdCache.set(obj, memberByIdCache);
-				}
-				memberByIdCache.set(memberId, result);
+				objCache.set(memberId, result);
 				return result;
 
 			default:
 				throw 'Unsupported member target';
-		};
+		}
 	}
 
 	public function setMember(object:Value, field:String, value:Value):Void {
@@ -362,20 +256,10 @@ class MemberResolver {
 				if (fieldName == null)
 					throw 'Unknown member id: $memberId';
 				Reflection.setField(obj, fieldName, vm.valueToHaxe(value));
-				// Invalidate ALL caches for this member
-				var fieldCache = nativeFieldValueCache.get(obj);
-				if (fieldCache != null)
-					fieldCache.remove(memberId);
-				var memberByIdCache = nativeMemberByIdCache.get(obj);
-				if (memberByIdCache != null)
-					memberByIdCache.remove(memberId);
-				var nativeClass = Type.getClass(obj);
-				if (nativeClass != null) {
-					var nativeClassName = Type.getClassName(nativeClass);
-					var kindCache = nativeFieldKindCache.get(nativeClassName);
-					if (kindCache != null)
-						kindCache.remove(memberId);
-				}
+				// Invalidate cache for this member
+				var objCache = nativeCache.get(obj);
+				if (objCache != null)
+					objCache.remove(memberId);
 			default:
 				throw 'Cannot set member id $memberId';
 		}
@@ -402,15 +286,5 @@ class MemberResolver {
 				return classData.staticMethods.get(name);
 		}
 		return null;
-	}
-
-	inline function cacheNativeMethodById(obj:Dynamic, memberId:Int, value:Value):Value {
-		var cachedMethods = nativeObjectMethodCache.get(obj);
-		if (cachedMethods == null) {
-			cachedMethods = new IntMap<Value>();
-			nativeObjectMethodCache.set(obj, cachedMethods);
-		}
-		cachedMethods.set(memberId, value);
-		return value;
 	}
 }

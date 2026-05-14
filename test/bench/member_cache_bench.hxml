@@ -1,0 +1,5 @@
+-cp ../../src
+-cp .
+-D nx_profile
+-main MemberCacheBench
+-cpp cpp/member_cache_bench

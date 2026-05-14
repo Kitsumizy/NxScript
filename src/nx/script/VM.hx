@@ -2,7 +2,12 @@ package nx.script;
 
 import nx.script.Bytecode;
 import haxe.ds.ObjectMap;
+import haxe.ds.IntMap;
 import nx.bridge.Reflection;
+
+#if cpp
+import cpp.ObjectType;
+#end
 
 using StringTools;
 
@@ -242,9 +247,7 @@ class VM {
 		arrayMethodCache = new ObjectMap();
 		instanceMethodCache = new ObjectMap();
 		memberResolver = new MemberResolver(this);
-		// _typeNameCache removed
 		nativeArgBuffers = new Map();
-		// _nativeFieldCache removed
 
 		// usingExtensions init removed
 		initializeNativeFunctions();
@@ -1117,23 +1120,64 @@ class VM {
 					}
 					stack[sp++] = VDict(map);
 
-				case Op.GET_MEMBER:
-					var field = resolveMemberRuntimeName(members, strings, arg);
-					var object = stack[--sp];
-					#if nx_profile
-					memberAccessCount++;
-					#end
-					#if NXDEBUG
-					trace('GET_MEMBER: field=$field, object type=${Type.enumConstructor(object)}');
-					#end
-					stack[sp++] = getMember(object, field);
+			case Op.GET_MEMBER:
+				var field = resolveMemberRuntimeName(members, strings, arg);
+				var object = stack[--sp];
+				#if nx_profile
+				memberAccessCount++;
+				#end
+				
+				// HOTPATH: Direct native access - no MemberResolver overhead
+				var result:Value = switch (object) {
+					case VNativeObject(obj):
+						// Inline native field access - this is THE hotpath
+						#if cpp
+						var raw:Dynamic = untyped __cpp__("({0})->__Field({1}, hx::paccAlways)", obj, field);
+						#else
+						var raw:Dynamic = Reflect.getProperty(obj, field);
+						if (raw == null) raw = Reflect.field(obj, field);
+						#end
+						
+						if (raw == null) {
+							VNull;
+						} else {
+							#if cpp
+							var isFn = raw != null && raw.__GetType() == ObjectType.vtFunction;
+							#else
+							var isFn = Reflect.isFunction(raw);
+							#end
+							
+							if (isFn) {
+								VNativeFunction(field, -1, (args:Array<Value>) -> {
+									var haxeArgs = [for (a in args) valueToHaxe(a)];
+									return haxeToValue(Reflection.callMethod(obj, raw, haxeArgs));
+								});
+							} else {
+								haxeToValue(raw);
+							}
+						}
+					default:
+						getMember(object, field);
+				}
+				stack[sp++] = result;
 
-				case Op.SET_MEMBER:
-					var field = resolveMemberRuntimeName(members, strings, arg);
-					var object = stack[--sp];
-					var value = stack[--sp];
-					setMember(object, field, value);
-					stack[sp++] = value;
+			case Op.SET_MEMBER:
+				var field = resolveMemberRuntimeName(members, strings, arg);
+				var object = stack[--sp];
+				var value = stack[--sp];
+				
+				// HOTPATH: Direct native access - no MemberResolver overhead
+				switch (object) {
+					case VNativeObject(obj):
+						#if cpp
+						untyped __cpp__("({0})->__SetField({1}, {2}, hx::paccAlways)", obj, field, valueToHaxe(value));
+						#else
+						Reflect.setProperty(obj, field, valueToHaxe(value));
+						#end
+					default:
+						setMember(object, field, value);
+				}
+				stack[sp++] = value;
 
 				case Op.GET_INDEX:
 					var index = stack[--sp];
@@ -2134,7 +2178,15 @@ class VM {
 				if (idx < 0 || idx >= arr.length)
 					throw 'Index out of bounds: $idx';
 				arr[idx];
-			case [VNativeObject(obj), VNumber(i)] if (Std.isOfType(obj, Array)):
+			case [VNativeObject(obj), VNumber(i)]:
+				// vtArray = 4 in hxcpp's ObjectType enum
+				#if cpp
+				var isArray = untyped __cpp__("({0}).mPtr && ({0}).mPtr->__GetType() == 4", obj);
+				#else
+				var isArray = Std.isOfType(obj, Array);
+				#end
+				if (!isArray)
+					throw 'Cannot index';
 				var arr:Array<Dynamic> = cast obj;
 				var idx = Std.int(i);
 				if (idx < 0 || idx >= arr.length)
@@ -2188,7 +2240,15 @@ class VM {
 				if (idx < 0 || idx >= arr.length)
 					throw 'Index out of bounds: $idx';
 				arr[idx] = value;
-			case [VNativeObject(obj), VNumber(i)] if (Std.isOfType(obj, Array)):
+			case [VNativeObject(obj), VNumber(i)]:
+				// vtArray = 4 in hxcpp's ObjectType enum
+				#if cpp
+				var isArray = untyped __cpp__("({0}).mPtr && ({0}).mPtr->__GetType() == 4", obj);
+				#else
+				var isArray = Std.isOfType(obj, Array);
+				#end
+				if (!isArray)
+					throw 'Cannot set index';
 				var arr:Array<Dynamic> = cast obj;
 				var idx = Std.int(i);
 				if (idx < 0 || idx >= arr.length)
@@ -2787,7 +2847,6 @@ class VM {
 			case AGGRESSIVE:
 				flushCaches();
 			case SOFT:
-				// Count tracked objects across both caches
 				var count = 0;
 				for (_ in numberMethodCache.keys())
 					count++;
@@ -2802,8 +2861,6 @@ class VM {
 				if (count >= gc_softThreshold)
 					flushCaches();
 			case VERY_SOFT:
-				// Never flush — trust the host GC entirely.
-				// Still allocate fresh caches on first execute if null.
 				if (numberMethodCache == null)
 					numberMethodCache = new Map();
 				if (stringMethodCache == null)
@@ -2833,8 +2890,6 @@ class VM {
 		arrayMethodCache = new ObjectMap();
 		instanceMethodCache = new ObjectMap();
 		nativeArgBuffers = new Map();
-		// _typeNameCache removed
-		// _nativeFieldCache removed
 	}
 
 	function bindGlobalSlots(chunk:Chunk):Void {

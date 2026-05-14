@@ -24,6 +24,7 @@ class Tokenizer {
 		"let" => KLet,
 		"var" => KVar,
 		"moewvar" => KVar,
+		"final" => KVar, // alias para var
 		"const" => KConst,
 		"func" => KFunc,
 		"fn" => KFn,

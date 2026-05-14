@@ -1,5 +1,9 @@
 package nx.bridge;
 
+#if cpp
+import cpp.ObjectType;
+#end
+
 /**
  * Platform-aware reflection bridge for native Haxe object access.
  *
@@ -20,18 +24,12 @@ class Reflection {
 	 * CPP: direct __Field with paccAlways (no getter dispatch).
 	 * Other: getProperty with field fallback.
 	 */
-	public static inline function getField(obj:Dynamic, field:String):Dynamic {
+	
+	public inline static function getField(obj:Dynamic, field:String):Dynamic {
 		#if cpp
-		var v:Dynamic = untyped __cpp__("({0})->__Field({1}, hx::paccAlways)", obj, field);
-		// Some typed cpp fields can come back as false in paccAlways mode.
-		if (v == false)
-			v = untyped __cpp__("({0})->__Field({1}, hx::paccDynamic)", obj, field);
-		if (v == false)
-			v = untyped __cpp__("({0})->__Field({1}, hx::paccNever)", obj, field);
-		return v;
+		return untyped __cpp__("({0})->__Field({1}, hx::paccAlways)", obj, field);
 		#else
-		var v = Reflect.getProperty(obj, field);
-		return v != null ? v : Reflect.field(obj, field);
+		return Reflect.getProperty(obj, field);
 		#end
 	}
 
@@ -70,17 +68,16 @@ class Reflection {
 
 	/**
 	 * Check if a Dynamic value is a callable function.
-	 * CPP: checks the internal HX type tag (2 = function) directly — no Reflect overhead.
+	 * CPP: checks the internal HX type tag directly — no Reflect overhead.
 	 * Other: Reflect.isFunction.
-	 * 
-	 * on hxcpp dynamic types of Bool are treated as Null !?
-	 * so we just quick return false if so. 
 	 */
+	
 	public static inline function isFunction(v:Dynamic):Bool {
 		#if cpp
-		if (v == null || v == false || v == true)
+		if (!untyped __cpp__("::hx::IsNotNull({0})", v))
 			return false;
-		return untyped __cpp__("{0}.mPtr && {0}.mPtr->__GetType() == 2", v);
+		
+		return v.__GetType() == ObjectType.vtFunction;
 		#else
 		return Reflect.isFunction(v);
 		#end
