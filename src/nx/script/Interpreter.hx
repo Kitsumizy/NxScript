@@ -1229,8 +1229,20 @@ class Interpreter {
 		register(name, arity, fn);
 
 	/** Call a named function from scripts or native methods */
-	public function call(name:String, args:Array<Value>):Value {
-		return vm.callMethod(name, args);
+	public function call(name:String, args:Array<Dynamic>):Value
+	{
+		// fast path
+		if (args.length == 0 || Std.isOfType(args[0], Value))
+		{
+			return vm.callMethod(name, cast args);
+		}
+
+		// slow path (conversion)
+		var converted = [];
+		for (arg in args)
+			converted.push(vm.haxeToValue(arg));
+
+		return vm.callMethod(name, converted);
 	}
 
 	/** Fast path by compiled global ID. */
