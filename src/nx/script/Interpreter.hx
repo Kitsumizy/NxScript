@@ -1260,13 +1260,17 @@ class Interpreter {
 		return getId(id);
 
 	/** Set global value by compiled ID. */
-	public function setId(id:Int, value:Value):Void {
+	public function setId(id:Int, value:Dynamic):Void {
+		if (!Std.isOfType(value, Value))
+			value = vm.haxeToValue(value);
+
+
 		vm.setById(id, value);
 	}
 
 	/** Alias for setId. */
 	public inline function setById(id:Int, value:Value):Void
-		setId(id, value);
+		setId(id, value); 
 
 	/** Resolve global ID by name, returns -1 if not compiled/bound. */
 	public function globalId(name:String):Int {
