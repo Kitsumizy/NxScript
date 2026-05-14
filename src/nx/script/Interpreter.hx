@@ -178,8 +178,12 @@ class Interpreter {
 	 * 
 	 * Lookup chain: local scope → parent object fields → global scope
 	 */
-	public var parent:Null<Dynamic> = null;
-
+	public var parent(default, set):Null<Dynamic> = null;
+	public function set_parent(p:Dynamic):Null<Dynamic> {
+		this.parent = p;
+		this.vm.parent = p;
+		return p;
+	}
 	public function new(debug:Bool = false, strict:Bool = false) {
 		this.debug = debug;
 		this.strictByDefault = strict;
@@ -190,15 +194,6 @@ class Interpreter {
 		registerBuiltins();
 	}
 
-	/**
-	 * Set the parent scope object for variable lookups.
-	 * Fluent API for setting parent.
-	 */
-	public function withParent(p:Dynamic):Interpreter {
-		this.parent = p;
-		this.vm.parent = p;
-		return this;
-	}
 
 	/**
 	 * Registers all built-in global functions (trace, print, len, range, type, math stuff, etc).
