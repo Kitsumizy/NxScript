@@ -1,5 +1,5 @@
 -cp ../../../src
--cp .
 -cp ..
--main BugFixTest
+-main regression.BugFixTest
 --interp
+

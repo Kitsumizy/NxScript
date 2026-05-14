@@ -1,3 +1,5 @@
+package benchmarks.SpeedCheck;
+
 package;
 
 import nx.script.nativeReflection.NxReflect;
