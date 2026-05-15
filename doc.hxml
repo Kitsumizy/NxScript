@@ -1,5 +1,6 @@
 -cp src
 -cp docs/haxe_stubs
--main nx.binding.NxBinding
+-lib prismcli
+--macro include("nx")
 -xml docs/api.xml
 --no-output
