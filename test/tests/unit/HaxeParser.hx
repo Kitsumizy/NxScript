@@ -1,6 +1,5 @@
 package unit;
 
-package;
 
 import nx.script.Interpreter;
 import nx.script.parsers.HaxeScriptParser;

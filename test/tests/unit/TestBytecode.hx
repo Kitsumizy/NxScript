@@ -1,4 +1,4 @@
-package;
+package unit;
 
 import nx.script.Interpreter;
 

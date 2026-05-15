@@ -1,7 +1,5 @@
 package unit;
 
-package;
-
 import nx.script.Interpreter;
 
 class BasicTest {
