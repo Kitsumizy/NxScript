@@ -1,6 +1,5 @@
 package regression;
 
-package;
 
 import nx.script.Interpreter;
 
