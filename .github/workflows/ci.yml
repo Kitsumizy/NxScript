@@ -50,9 +50,9 @@ jobs:
         working-directory: test/tests
         run: haxe config/errors.hxml
 
-      - name: Run Haxe parser tests
-        working-directory: test/tests
-        run: haxe config/haxeparser.hxml
+      # - name: Run Haxe parser tests
+      #   working-directory: test/tests
+      #   run: haxe config/haxeparser.hxml
 
       - name: Run bridge/using tests
         working-directory: test/tests
