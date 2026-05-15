@@ -27,7 +27,8 @@ class SwitchCases {
 		assert(interp.runDynamic('switch (2){case 1:"one"\ncase 2:{var nested="a"\nvar result="no"\nswitch (nested){case "a":result="nested"\ndefault:result="no"}\nresult}\ndefault:"no"}') == "nested",
 			"nested switch");
 		assert(interp.runDynamic('switch (1){case 1:"one"}') == "one", "no default");
-		assertThrows(function() interp.runDynamic('switch (2){case 2=>"two"}'), "arrow syntax forbidden");
+		// Arrow syntax now supported in switch cases
+		assert(interp.runDynamic('switch (2){case 2=>"two"\ndefault=>"other"}') == "two", "arrow syntax");
 
 		trace("\n========================================");
 		trace("ALL SWITCH CASE TESTS PASSED!");
