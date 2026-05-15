@@ -1222,6 +1222,8 @@ class Interpreter {
 	/** Register a native function callable from scripts */
 	public function register(name:String, arity:Int, fn:Array<Value>->Value) {
 		natives.set(name, VNativeFunction(name, arity, fn));
+		// Update global slots if this name was already compiled
+		vm.markGlobalsDirty();
 	}
 
 	@:deprecated("Use 'register' instead")

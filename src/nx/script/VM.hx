@@ -460,48 +460,47 @@ class VM {
 					currentUpvalues[arg] = upValue;
 
 			//  Might want to change this nesting its somewhat expensive.
-			case Op.LOAD_VAR:
-				var name = strings[arg];
-				// Inline getVariable with single .get() per map (no exists+get overhead)
-				var value:Value = (currentLocalVars != null && currentLocalVars != EMPTY_MAP) ? currentLocalVars.get(name) : null;
+		case Op.LOAD_VAR:
+			var name = strings[arg];
+			// Inline getVariable with single .get() per map (no exists+get overhead)
+			var value:Value = (currentLocalVars != null && currentLocalVars != EMPTY_MAP) ? currentLocalVars.get(name) : null;
+			if (value == null) {
+				value = scopeVars.get(name);
 				if (value == null) {
-					value = scopeVars.get(name);
+					value = constVars.get(name);
 					if (value == null) {
-						value = constVars.get(name);
+						// Sandbox check before globals/natives/parent
+						if (sandboxed && sandboxBlocklist.exists(name))
+							throw 'Sandbox: access to "$name" is not allowed';
+						// Check globals/natives FIRST - these are explicitly registered
+						value = globals.get(name);
 						if (value == null) {
-							// Sandbox check before parent/globals/natives (inlined path must respect blocklist)
-							if (sandboxed && sandboxBlocklist.exists(name))
-								throw 'Sandbox: access to "$name" is not allowed';
-							// Check parent scope object before falling back to globals
-							if (parent != null) {
-								var parentValue = Reflect.field(parent, name);
-								if (parentValue != null) {
-									value = haxeToValue(parentValue);
-								}
-							}
+							value = natives.get(name);
 							if (value == null) {
-								value = globals.get(name);
+								// Then check parent scope object (Dynamic fields)
+								if (parent != null) {
+									var parentValue = Reflect.field(parent, name);
+									if (parentValue != null) {
+										value = haxeToValue(parentValue);
+									}
+								}
 								if (value == null) {
-									value = natives.get(name);
-									if (value == null) {
-										var thisValue:Value = currentLocalVars != EMPTY_MAP ? currentLocalVars.get("this") : null;
-										if (thisValue != null) {
-											var member = memberResolver.getMember(thisValue, name);
-											switch (member) {
-												case VNull:
-												default:
-													value = member;
-											}
+									var thisValue:Value = currentLocalVars != EMPTY_MAP ? currentLocalVars.get("this") : null;
+									if (thisValue != null) {
+										var member = memberResolver.getMember(thisValue, name);
+										switch (member) {
+											case VNull:
+											default:
+												value = member;
 										}
-										if (value == null)
-											throw 'Undefined variable: $name';
 									}
 								}
 							}
 						}
 					}
 				}
-				stack[sp++] = value;
+			}
+			stack[sp++] = value;
 
 		case Op.STORE_VAR:
 			var name = strings[arg];
@@ -1742,16 +1741,17 @@ class VM {
 			return constVars.get(name);
 		if (sandboxed && sandboxBlocklist.exists(name))
 			throw 'Sandbox: access to "$name" is not allowed';
-		// Check parent scope object before falling back to globals
+		// Check globals/natives FIRST - these are explicitly registered
+		if (globals.exists(name))
+			return globals.get(name);
+		if (natives.exists(name))
+			return natives.get(name);
+		// Then check parent scope object (Dynamic fields)
 		if (parent != null) {
 			var parentValue = Reflect.field(parent, name);
 			if (parentValue != null)
 				return haxeToValue(parentValue);
 		}
-		if (globals.exists(name))
-			return globals.get(name);
-		if (natives.exists(name))
-			return natives.get(name);
 		if (currentFrame.localVars != EMPTY_MAP && currentFrame.localVars.exists("this")) {
 			var thisValue = currentFrame.localVars.get("this");
 			if (thisValue != null) {
@@ -2665,6 +2665,10 @@ class VM {
 	}
 
 	public function callMethod(name:String, args:Array<Value>):Value {
+		// Check natives FIRST - these are explicitly registered builtins
+		if (natives.exists(name)) {
+			return callResolved(natives.get(name), args);
+		}
 		var id = getGlobalId(name);
 		if (id >= 0)
 			return callMethodId(id, args);
@@ -2679,7 +2683,19 @@ class VM {
 		if (name == null || name == "")
 			return -1;
 		var id = globalSlotByName.get(name);
-		return id == null ? -1 : id;
+		if (id != null)
+			return id;
+		// If name is a native, allocate a slot for it
+		if (natives.exists(name)) {
+			id = globalSlotNames.length;
+			globalSlotNames.push(name);
+			globalSlotByName.set(name, id);
+			globalSlotValues.push(natives.get(name));
+			globalSlotIsConst.push(false);
+			globalSlotConstInit.push(false);
+			return id;
+		}
+		return -1;
 	}
 
 	/** Resolves a global name from ID, or null if out of range. */
@@ -2715,7 +2731,13 @@ class VM {
 			syncGlobalSlotsFromMap();
 		if (id < 0 || id >= globalSlotValues.length)
 			return VNull;
-		return globalSlotValues[id];
+		var value = globalSlotValues[id];
+		// If a native with this name exists, prefer it over parent/globals
+		// This handles the case where parent has a field with the same name as a builtin
+		var name = resolveGlobalName(id);
+		if (name != null && natives.exists(name))
+			return natives.get(name);
+		return value;
 	}
 
 	/** Set global value by ID. */
@@ -2967,8 +2989,14 @@ class VM {
 			var name = names[i];
 			globalSlotNames[i] = name;
 			globalSlotByName.set(name, i);
+			// Check globals first, then natives
 			var hasGlobal = globals.exists(name);
-			globalSlotValues[i] = hasGlobal ? globals.get(name) : VNull;
+			if (hasGlobal)
+				globalSlotValues[i] = globals.get(name);
+			else if (natives.exists(name))
+				globalSlotValues[i] = natives.get(name);
+			else
+				globalSlotValues[i] = VNull;
 			globalSlotIsConst[i] = constMask != null && i < constMask.length ? constMask[i] : false;
 			globalSlotConstInit[i] = globalSlotIsConst[i] && hasGlobal;
 		}
@@ -3006,7 +3034,16 @@ class VM {
 			var name = globalSlotNames[i];
 			if (name == null || name == "")
 				continue;
-			globalSlotValues[i] = globals.exists(name) ? globals.get(name) : VNull;
+			// Check globals first, then natives, then parent
+			if (globals.exists(name))
+				globalSlotValues[i] = globals.get(name);
+			else if (natives.exists(name))
+				globalSlotValues[i] = natives.get(name);
+			else if (parent != null) {
+				var parentValue = Reflect.field(parent, name);
+				globalSlotValues[i] = parentValue != null ? haxeToValue(parentValue) : VNull;
+			} else
+				globalSlotValues[i] = VNull;
 		}
 		globalsDirty = false;
 	}
