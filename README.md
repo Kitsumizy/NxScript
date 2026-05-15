@@ -523,3 +523,5 @@ Apache 2.0.
 made by [@senioritaelizabeth](https://github.com/senioritaelizabeth) · thanks to RapperGfDev for testing and optimizations
 
 </div>
+
+Linus Torvalds was here.
