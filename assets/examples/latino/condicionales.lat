@@ -1,0 +1,20 @@
+# Condicionales en Latino
+
+variable edad = 18
+
+si edad >= 18 {
+    escribir("Eres mayor de edad")
+} sino {
+    escribir("Eres menor de edad")
+}
+
+# Condicional sin llaves
+variable nota = 85
+
+si nota >= 90
+    escribir("Excelente")
+sino si nota >= 70
+    escribir("Aprobado")
+sino
+    escribir("Reprobado")
+fin

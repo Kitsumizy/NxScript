@@ -1,0 +1,14 @@
+// Variables y tipos en NxScript
+
+var nombre = "NxScript"
+var version = 1.0
+var esGenial = true
+
+trace("Nombre: " + nombre)
+trace("Versión: " + version)
+trace("¿Es genial?: " + esGenial)
+
+// Type checking
+trace("Tipo de nombre: " + type(nombre))
+trace("Tipo de version: " + type(version))
+trace("Tipo de esGenial: " + type(esGenial))

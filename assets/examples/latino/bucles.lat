@@ -1,0 +1,20 @@
+# Bucles en Latino
+
+# While
+variable contador = 0
+mientras contador < 5 {
+    escribir("Contador: " + contador)
+    contador = contador + 1
+}
+
+# For con rango
+para i en rango(1, 6) {
+    escribir("Número: " + i)
+}
+
+# Repetir hasta
+variable x = 0
+repetir {
+    escribir("X = " + x)
+    x = x + 1
+} hasta x >= 3

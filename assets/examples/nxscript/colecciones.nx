@@ -1,0 +1,29 @@
+// Arrays y objetos en NxScript
+
+// Arrays
+var frutas = ["manzana", "banana", "naranja"]
+trace("Primera: " + frutas[0])
+trace("Longitud: " + frutas.length)
+
+for (var fruta in frutas) {
+    trace("Fruta: " + fruta)
+}
+
+// Array methods
+frutas.push("uva")
+trace("Después de push: " + frutas)
+
+// Objetos
+var persona = {
+    nombre: "Ana",
+    edad: 30,
+    ciudad: "Madrid"
+}
+
+trace("Nombre: " + persona.nombre)
+trace("Edad: " + persona.edad)
+
+// Iterar sobre objeto
+for (key in persona) {
+    trace(key + ": " + persona[key])
+}

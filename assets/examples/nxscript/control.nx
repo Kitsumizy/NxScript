@@ -1,0 +1,24 @@
+// Control flow en NxScript
+
+var edad = 25
+
+if (edad >= 18) {
+    trace("Mayor de edad")
+} else {
+    trace("Menor de edad")
+}
+
+// Ternary operator
+var estado = edad >= 18 ? "adulto" : "joven"
+trace("Estado: " + estado)
+
+// Switch statement
+var dia = 3
+switch (dia) {
+    case 1: trace("Lunes"); break;
+    case 2: trace("Martes"); break;
+    case 3: trace("Miércoles"); break;
+    case 4: trace("Jueves"); break;
+    case 5: trace("Viernes"); break;
+    default: trace("Fin de semana");
+}
