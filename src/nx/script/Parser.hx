@@ -1612,6 +1612,7 @@ class Parser {
 		}
 
 		if (strictSemicolons) {
+			skipNewlines();
 			if (check(TRightBrace) || isEOF())
 				return;
 			expect(TSemicolon, "Expected ';' in strict mode");
