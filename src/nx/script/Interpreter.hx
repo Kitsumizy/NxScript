@@ -589,7 +589,7 @@ class Interpreter {
 		}));
 
 		// Script
-		vm.natives.set("convokarScript", VNativeFunction("convokarScript", 1, function(args:Array<Value>):Value {
+		vm.natives.set("convokeScript", VNativeFunction("convokarScript", 1, function(args:Array<Value>):Value {
 			var path = switch (args[0]) {
 				case VString(s): s;
 				default: throw "convokarScript(path) expects a string";
