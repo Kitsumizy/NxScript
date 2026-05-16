@@ -611,6 +611,11 @@ class VM {
 							stack[sp++] = multiply(a, b);
 					}
 
+				case Op.CONCAT:
+					var b = stack[--sp];
+					var a = stack[--sp];
+					stack[sp++] = VString(Std.string(valueToString(a)) + Std.string(valueToString(b)));
+
 				case Op.DIV:
 					var b = stack[--sp];
 					var a = stack[--sp];
@@ -1994,19 +1999,19 @@ class VM {
 			}
 		}
 
-		// localVars: reuse EMPTY_MAP when no closure, copy otherwise
+		// localVars: always create map for params, even without closure
 		var localVars:Map<String, Value>;
 		if (closure == EMPTY_MAP || closure == null) {
-			localVars = EMPTY_MAP;
+			localVars = new Map();
 		} else {
 			localVars = closure.copy();
-			// Write param names into localVars for LOAD_VAR fallback (rare path)
-			var pnames = func.paramNames;
-			i = 0;
-			while (i < args.length && i < pnames.length) {
-				localVars.set(pnames[i], args[i]);
-				i++;
-			}
+		}
+		// Write param names into localVars for LOAD_VAR
+		var pnames = func.paramNames;
+		i = 0;
+		while (i < args.length && i < pnames.length) {
+			localVars.set(pnames[i], args[i]);
+			i++;
 		}
 
 		var upvalues = buildUpvalueArray(func, closure);
@@ -2128,6 +2133,12 @@ class VM {
 			case [VBool(x), VBool(y)]: x == y;
 			case [VNull, VNull]: true;
 			case [VEnumValue(e1, v1, _), VEnumValue(e2, v2, _)]: e1 == e2 && v1 == v2;
+			case [VArray(a1), VArray(a2)]: a1 == a2;
+			case [VDict(d1), VDict(d2)]: d1 == d2;
+			case [VBool(x), VNumber(y)]: (x ? 1 : 0) == y;
+			case [VNumber(x), VBool(y)]: x == (y ? 1 : 0);
+			case [VNull, _]: false;
+			case [_, VNull]: false;
 			default: false;
 		}
 	}
@@ -2136,6 +2147,12 @@ class VM {
 		return switch [a, b] {
 			case [VNumber(x), VNumber(y)]: if (x < y) -1 else if (x > y) 1 else 0;
 			case [VString(x), VString(y)]: if (x < y) -1 else if (x > y) 1 else 0;
+			case [VBool(x), VBool(y)]: if (x == y) 0 else if (x) 1 else -1;
+			case [VBool(x), VNumber(y)]: if (!x && y == 0) 0 else if (!x) -1 else 1;
+			case [VNumber(x), VBool(y)]: if (!y && x == 0) 0 else if (!y) 1 else -1;
+			case [VNull, VNull]: 0;
+			case [VNull, _]: -1;
+			case [_, VNull]: 1;
 			default: throw 'Cannot compare';
 		}
 	}
@@ -2265,6 +2282,8 @@ class VM {
 		return switch [object, index] {
 			case [VArray(arr), VNumber(i)]:
 				var idx = Std.int(i);
+				// Support negative indices: -1 = last element
+				if (idx < 0) idx = arr.length + idx;
 				if (idx < 0 || idx >= arr.length)
 					throw 'Index out of bounds: $idx';
 				arr[idx];
@@ -2279,6 +2298,8 @@ class VM {
 					throw 'Cannot index';
 				var arr:Array<Dynamic> = cast obj;
 				var idx = Std.int(i);
+				// Support negative indices: -1 = last element
+				if (idx < 0) idx = arr.length + idx;
 				if (idx < 0 || idx >= arr.length)
 					throw 'Index out of bounds: $idx';
 				haxeToValue(arr[idx]);
@@ -2287,6 +2308,8 @@ class VM {
 				map.exists(key) ? map.get(key) : VNull;
 			case [VString(s), VNumber(i)]:
 				var idx = Std.int(i);
+				// Support negative indices: -1 = last character
+				if (idx < 0) idx = s.length + idx;
 				if (idx < 0 || idx >= s.length)
 					throw 'Index out of bounds: $idx';
 				VString(s.charAt(idx));
@@ -2327,6 +2350,8 @@ class VM {
 		switch [object, index] {
 			case [VArray(arr), VNumber(i)]:
 				var idx = Std.int(i);
+				// Support negative indices: -1 = last element
+				if (idx < 0) idx = arr.length + idx;
 				if (idx < 0 || idx >= arr.length)
 					throw 'Index out of bounds: $idx';
 				arr[idx] = value;
@@ -2341,6 +2366,8 @@ class VM {
 					throw 'Cannot set index';
 				var arr:Array<Dynamic> = cast obj;
 				var idx = Std.int(i);
+				// Support negative indices: -1 = last element
+				if (idx < 0) idx = arr.length + idx;
 				if (idx < 0 || idx >= arr.length)
 					throw 'Index out of bounds: $idx';
 				arr[idx] = valueToHaxe(value);
