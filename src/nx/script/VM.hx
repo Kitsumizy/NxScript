@@ -495,6 +495,9 @@ class VM {
 										}
 									}
 								}
+								if (value == null) {
+									throw 'Undefined variable "$name"';
+								}
 							}
 						}
 					}
@@ -1766,6 +1769,46 @@ class VM {
 		return null;
 	}
 
+	/** Get variable without checking parent scope - used for call() resolution */
+	public function getVariableNoParent(name:String):Value {
+		if (currentFrame.localVars != EMPTY_MAP && currentFrame.localVars.exists(name))
+			return currentFrame.localVars.get(name);
+		if (scopeVars.exists(name))
+			return scopeVars.get(name);
+		if (constVars.exists(name))
+			return constVars.get(name);
+		if (sandboxed && sandboxBlocklist.exists(name))
+			throw 'Sandbox: access to "$name" is not allowed';
+		// Check globals/natives FIRST - these are explicitly registered
+		if (globals.exists(name))
+			return globals.get(name);
+		if (natives.exists(name))
+			return natives.get(name);
+		// Check this members (script-defined methods/fields)
+		if (currentFrame.localVars != EMPTY_MAP && currentFrame.localVars.exists("this")) {
+			var thisValue = currentFrame.localVars.get("this");
+			if (thisValue != null) {
+				var member = memberResolver.getMember(thisValue, name);
+				switch (member) {
+					case VNull:
+					default:
+						return member;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Get variable from parent scope only - fallback for call() resolution */
+	public function getVariableOnlyParent(name:String):Value {
+		if (parent != null) {
+			var parentValue = Reflect.field(parent, name);
+			if (parentValue != null)
+				return haxeToValue(parentValue);
+		}
+		return null;
+	}
+
 	/**
 	 * Check if a name should be treated as a parent method/field (not overridable by script).
 	 * Returns true if the name exists in the parent object.
@@ -2672,7 +2715,8 @@ class VM {
 		var id = getGlobalId(name);
 		if (id >= 0)
 			return callMethodId(id, args);
-		var func = getVariable(name);
+		// Only check script locals/members - do NOT check parent
+		var func = getVariableNoParent(name);
 		if (func == null)
 			throw 'Undefined function: $name';
 		return callResolved(func, args);

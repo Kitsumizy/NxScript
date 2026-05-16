@@ -19,12 +19,12 @@ class ErrorFormatTest {
 		assertContains(parseMsg, "ifx", "Shows undefined variable name");
 		assertContains(parseMsg, "examples/invalid_keyword.nx", "Shows script path");
 		assertContains(parseMsg, "Undefined", "Shows error type");
-		trace("TEMP: i need to fix it, not today");
-		return;
+		
 		trace("\nTest 2: Runtime crash includes stack");
 		var runtimeMsg = captureError(function() {
 			interp.run('func boom() {\n\tvar x = 1 / 0\n}\nboom()', "examples/runtime_crash.nx");
 		});
+		trace("DEBUG runtimeMsg: " + runtimeMsg);
 		// Check error message contains key runtime info
 		assertContains(runtimeMsg, "examples/runtime_crash.nx", "Includes script path");
 		assert(runtimeMsg.indexOf("runtime") >= 0 || runtimeMsg.indexOf("/") >= 0, "Indicates runtime/division error");

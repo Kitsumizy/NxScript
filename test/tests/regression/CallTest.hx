@@ -16,6 +16,7 @@ class CallTest {
         func onNote(e) {
             trace(e);
         }');
+
 		interp.call("onNote", [note]);
 		trace(note);
 	}
