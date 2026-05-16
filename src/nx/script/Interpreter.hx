@@ -267,10 +267,7 @@ class Interpreter {
 					else
 						"Object";
 					#elseif cpp
-					if (untyped __cpp__("({0}).mPtr && std::string({0}).mPtr->__GetClass()->mName == \"Date\""))
-						"Date"
-					else
-						"Object";
+					"Object";
 					#else
 					if (Std.isOfType(obj, Date))
 						"Date"
