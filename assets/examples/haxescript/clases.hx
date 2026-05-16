@@ -1,40 +1,40 @@
-// Clases y objetos en Haxe
+// Classes and Objects in Haxe
 
-class Persona {
-    public var nombre:String;
-    public var edad:Int;
+class Person {
+    public var name:String;
+    public var age:Int;
     
-    public function new(nombre:String, edad:Int) {
-        this.nombre = nombre;
-        this.edad = edad;
+    public function new(name:String, age:Int) {
+        this.name = name;
+        this.age = age;
     }
     
-    public function saludar():String {
-        return "Hola, soy " + nombre + " y tengo " + edad + " años";
+    public function greet():String {
+        return "Hello, I'm " + name + " and I'm " + age + " years old";
     }
 }
 
 class Main {
     static function main() {
-        var persona = new Persona("Ana", 30);
-        trace(persona.saludar());
+        var person = new Person("Alice", 30);
+        trace(person.greet());
         
-        // Herencia
-        var estudiante = new Estudiante("Carlos", 20, "Informática");
-        trace(estudiante.saludar());
-        trace(estudiante.estudiar());
+        // Inheritance
+        var student = new Student("Bob", 20, "Computer Science");
+        trace(student.greet());
+        trace(student.study());
     }
 }
 
-class Estudiante extends Persona {
-    public var carrera:String;
+class Student extends Person {
+    public var major:String;
     
-    public function new(nombre:String, edad:Int, carrera:String) {
-        super(nombre, edad);
-        this.carrera = carrera;
+    public function new(name:String, age:Int, major:String) {
+        super(name, age);
+        this.major = major;
     }
     
-    public function estudiar():String {
-        return "Estudiando " + carrera;
+    public function study():String {
+        return "Studying " + major;
     }
 }

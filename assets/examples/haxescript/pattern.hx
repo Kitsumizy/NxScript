@@ -1,39 +1,39 @@
-// Pattern matching en Haxe
+// Pattern Matching in Haxe
 
 class PatternMatching {
     static function main() {
-        // Switch con pattern matching
-        var valor:Null<Int> = 3;
+        // Switch with pattern matching
+        var value:Null<Int> = 3;
         
-        switch (valor) {
+        switch (value) {
             case null:
-                trace("Valor es null");
+                trace("Value is null");
             case 0:
-                trace("Es cero");
+                trace("It's zero");
             case 1 | 2 | 3:
-                trace("Es 1, 2 o 3");
+                trace("It's 1, 2, or 3");
             case x if x > 10:
-                trace("Es mayor que 10: " + x);
+                trace("It's greater than 10: " + x);
             case x:
-                trace("Otro valor: " + x);
+                trace("Other value: " + x);
         }
         
-        // Match en enum
-        var resultado = evaluar(5);
-        switch (resultado) {
-            case Aprobado(nota):
-                trace("Aprobado con " + nota);
-            case Reprobado:
-                trace("Reprobado");
+        // Match on enum
+        var result = evaluate(5);
+        switch (result) {
+            case Passed(grade):
+                trace("Passed with " + grade);
+            case Failed:
+                trace("Failed");
         }
     }
     
-    enum Resultado {
-        Aprobado(nota:Int);
-        Reprobado;
+    enum Result {
+        Passed(grade:Int);
+        Failed;
     }
     
-    static function evaluar(nota:Int):Resultado {
-        return nota >= 6 ? Aprobado(nota) : Reprobado;
+    static function evaluate(grade:Int):Result {
+        return grade >= 6 ? Passed(grade) : Failed;
     }
 }

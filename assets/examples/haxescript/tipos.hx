@@ -1,24 +1,24 @@
-// Tipos y variables en Haxe
+// Types and Variables in Haxe
 
-class Tipos {
+class Types {
     static function main() {
-        // Tipado estático
-        var nombre:String = "Haxe";
+        // Static typing
+        var name:String = "Haxe";
         var version:Float = 4.3;
-        var esPotente:Bool = true;
-        var contador:Int = 0;
+        var isPowerful:Bool = true;
+        var counter:Int = 0;
         
-        trace("Lenguaje: " + nombre);
-        trace("Versión: " + version);
-        trace("¿Es potente?: " + esPotente);
+        trace("Language: " + name);
+        trace("Version: " + version);
+        trace("Is powerful?: " + isPowerful);
         
-        // Inferencia de tipos
-        var automatico = "Haxe infiere el tipo";
-        trace(automatico);
+        // Type inference
+        var automatic = "Haxe infers the type";
+        trace(automatic);
         
         // Dynamic
-        var dinámico:Dynamic = 42;
-        dinámico = "ahora es string";
-        trace(dinámico);
+        var dynamic:Any = 42;
+        dynamic = "now it's a string";
+        trace(dynamic);
     }
 }

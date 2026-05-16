@@ -1,7 +1,7 @@
-// Hola Mundo en Haxe
+// Hello World in Haxe
 
-class HolaMundo {
+class HelloWorld {
     static function main() {
-        trace("¡Hola Mundo desde Haxe!");
+        trace("Hello World from Haxe!");
     }
 }

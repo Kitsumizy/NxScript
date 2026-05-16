@@ -1,29 +1,29 @@
-// Arrays y Maps en Haxe
+// Arrays and Maps in Haxe
 
-class Colecciones {
+class Collections {
     static function main() {
         // Array
-        var frutas:Array<String> = ["manzana", "banana", "naranja"];
-        trace("Primera: " + frutas[0]);
-        trace("Longitud: " + frutas.length);
+        var fruits:Array<String> = ["apple", "banana", "orange"];
+        trace("First: " + fruits[0]);
+        trace("Length: " + fruits.length);
         
-        frutas.push("uva");
-        trace("Después de push: " + frutas);
+        fruits.push("grape");
+        trace("After push: " + fruits);
         
-        // Iterar
-        for (fruta in frutas) {
-            trace("Fruta: " + fruta);
+        // Iterate
+        for (fruit in fruits) {
+            trace("Fruit: " + fruit);
         }
         
-        // Map (diccionario)
-        var edades:Map<String, Int> = new Map();
-        edades.set("Ana", 30);
-        edades.set("Carlos", 25);
+        // Map (dictionary)
+        var ages:Map<String, Int> = new Map();
+        ages.set("Alice", 30);
+        ages.set("Bob", 25);
         
-        trace("Edad de Ana: " + edades.get("Ana"));
+        trace("Alice's age: " + ages.get("Alice"));
         
-        for (nombre in edades.keys()) {
-            trace(nombre + " tiene " + edades.get(nombre) + " años");
+        for (name in ages.keys()) {
+            trace(name + " is " + ages.get(name) + " years old");
         }
     }
 }

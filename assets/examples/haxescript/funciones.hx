@@ -1,27 +1,27 @@
-// Funciones en Haxe
+// Functions in Haxe
 
-class Funciones {
+class Functions {
     static function main() {
-        trace(saludar("Haxe"));
-        trace(sumar(5, 3));
-        trace(potencia(2, 8));
+        trace(greet("Haxe"));
+        trace(sum(5, 3));
+        trace(power(2, 8));
     }
     
-    static function saludar(nombre:String):String {
-        return "Hola " + nombre + "!";
+    static function greet(name:String):String {
+        return "Hello " + name + "!";
     }
     
-    static function sumar(a:Int, b:Int):Int {
+    static function sum(a:Int, b:Int):Int {
         return a + b;
     }
     
-    // Parámetros opcionales
-    static function saludarConHora(nombre:String, hora:String = "día"):String {
-        return "Buenas " + hora + ", " + nombre;
+    // Optional parameters
+    static function greetWithTime(name:String, timeOfDay:String = "day"):String {
+        return "Good " + timeOfDay + ", " + name;
     }
     
-    // Función inline
-    inline function potencia(base:Float, exp:Int):Float {
+    // Inline function
+    inline function power(base:Float, exp:Int):Float {
         return Math.pow(base, exp);
     }
 }

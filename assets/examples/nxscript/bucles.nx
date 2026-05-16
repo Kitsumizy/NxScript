@@ -1,21 +1,21 @@
-// Bucles en NxScript
+// Loops in NxScript
 
-// For loop clásico
+// Classic for loop
 for (var i = 0; i < 5; i++) {
     trace("i = " + i)
 }
 
 // For-in loop
-var colores = ["rojo", "verde", "azul"]
-for (var color in colores) {
+var colors = ["red", "green", "blue"]
+for (var color in colors) {
     trace("Color: " + color)
 }
 
 // While loop
-var contador = 0
-while (contador < 3) {
-    trace("Contando: " + contador)
-    contador++
+var counter = 0
+while (counter < 3) {
+    trace("Counting: " + counter)
+    counter++
 }
 
 // Do-while
