@@ -22,12 +22,11 @@ class ErrorFormatTest {
 		
 		trace("\nTest 2: Runtime crash includes stack");
 		var runtimeMsg = captureError(function() {
-			interp.run('func boom() {\n\tvar x = 1 / 0\n}\nboom()', "examples/runtime_crash.nx");
+			interp.run('func boom() {\n\tthrow "crash"\n}\nboom()', "examples/runtime_crash.nx");
 		});
-		trace("DEBUG runtimeMsg: " + runtimeMsg);
 		// Check error message contains key runtime info
 		assertContains(runtimeMsg, "examples/runtime_crash.nx", "Includes script path");
-		assert(runtimeMsg.indexOf("runtime") >= 0 || runtimeMsg.indexOf("/") >= 0, "Indicates runtime/division error");
+		assertContains(runtimeMsg, "crash", "Includes error message");
 
 		trace("\nTest 3: Haxe-like script syntax works");
 		var result = interp.runDynamic('function add(a:Int, b:Int) { return a + b; } var out:Int = add(20, 22); out;', "examples/hx_style.nx");
