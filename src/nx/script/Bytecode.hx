@@ -28,7 +28,6 @@ class Op {
 	public static inline var DIV = 0x13;
 	public static inline var MOD = 0x14;
 	public static inline var NEG = 0x15; // Negate
-	public static inline var CONCAT = 0x16; // String concat
 
 	// Bitwise operations (0x20 - 0x2F)
 	public static inline var BIT_AND = 0x20;

@@ -58,12 +58,11 @@ class Parser {
 			case TKeyword(KContinue): {advance(); SContinue;}
 			case TKeyword(KTry): parseTryCatch();
 			case TKeyword(KThrow): parseThrow();
-			case TKeyword(KMatch), TKeyword(KSwitch), TKeyword(KElect): parseMatch();
+			case TKeyword(KMatch), TKeyword(KSwitch): parseMatch();
 			case TKeyword(KUsing): parseUsing();
 			case TKeyword(KEnum): parseEnum();
 			case TKeyword(KAbstract): parseAbstract();
 			case TKeyword(KStatic): parseStatic();
-			case TKeyword(KEnd): {advance(); SBlock([]);} // empty fin
 			case TLeftBrace: parseBlock();
 			default: SExpr(parseExpression());
 		}
@@ -175,16 +174,9 @@ class Parser {
 		}
 
 		skipNewlines();
-		// Support both { } braces and Latino-style fin-terminated blocks
-		var body:Array<Stmt>;
-		if (match(TLeftBrace)) {
-			body = parseBlockBody();
-			expect(TRightBrace, "Expected '}' after function body");
-		} else {
-			body = parseBlockBody();
-			if (check(TKeyword(KEnd)))
-				advance(); // consume 'fin'
-		}
+		expect(TLeftBrace, "Expected '{' before function body");
+		var body = parseBlockBody();
+		expect(TRightBrace, "Expected '}' after function body");
 
 		return SFunc(name, params, returnType, body);
 	}
@@ -456,21 +448,14 @@ class Parser {
 	 *   if (x) return 1
 	 *   while (x > 0) x--
 	 */
-	function parseBody(forceBlockUntilEnd:Bool = false):Array<Stmt> {
+	function parseBody():Array<Stmt> {
 		if (check(TLeftBrace)) {
 			advance();
 			var body = parseBlockBody();
 			expect(TRightBrace, "Expected '}' after body");
 			return body;
-		} else if (check(TKeyword(KEnd))) {
-			// Empty block with just 'fin'
-			advance();
-			return [];
-		} else if (forceBlockUntilEnd) {
-			var body = parseBlockBody();
-			expect(TKeyword(KEnd), "Expected 'fin' after body");
-			return body;
 		} else {
+			// Single statement (no braces) — newlines allowed before it
 			skipNewlines();
 			var stmt = parseStatement();
 			consumeSingleStmtTerminator(stmt);
@@ -493,9 +478,8 @@ class Parser {
 		expect(TLeftParen, "Expected '(' after 'if'");
 		var condition = parseExpression();
 		expect(TRightParen, "Expected ')' after condition");
-		var multilineBody = check(TNewLine);
 
-		var thenBody = parseBody(multilineBody);
+		var thenBody = parseBody();
 
 		var elseBody = null;
 		skipSeparators();
@@ -505,8 +489,7 @@ class Parser {
 			if (check(TKeyword(KIf))) {
 				elseBody = [parseIf()];
 			} else {
-				var multilineElse = check(TNewLine);
-				elseBody = parseBody(multilineElse);
+				elseBody = parseBody();
 			}
 		} else if (check(TKeyword(KElseIf))) {
 			advance();
@@ -522,9 +505,8 @@ class Parser {
 		expect(TLeftParen, "Expected '(' after 'while'");
 		var condition = parseExpression();
 		expect(TRightParen, "Expected ')' after condition");
-		var multilineBody = check(TNewLine);
 
-		var body = parseBody(multilineBody);
+		var body = parseBody();
 
 		return SWhile(condition, body);
 	}
@@ -542,8 +524,7 @@ class Parser {
 				advance();
 				var iterable = parseExpression();
 				expect(TRightParen, "Expected ')' after for header");
-				var multilineBody = check(TNewLine);
-				loopStmt = SFor(variable, iterable, parseBody(multilineBody));
+				loopStmt = SFor(variable, iterable, parseBody());
 
 			case TKeyword(KFrom):
 				advance();
@@ -551,8 +532,7 @@ class Parser {
 				expect(TKeyword(KTo), "Expected 'to' in for-from-to loop");
 				var toExpr = parseExpression();
 				expect(TRightParen, "Expected ')' after for header");
-				var multilineBody = check(TNewLine);
-				loopStmt = SForRange(variable, fromExpr, toExpr, parseBody(multilineBody));
+				loopStmt = SForRange(variable, fromExpr, toExpr, parseBody());
 
 			default:
 				error("Expected 'in', 'of', or 'from' in for loop");
@@ -563,50 +543,26 @@ class Parser {
 	}
 
 	function parseBlock():Stmt {
-		// Support both { } braces and Latino-style fin-terminated blocks
-		if (match(TLeftBrace)) {
-			var stmts = parseBlockBody();
-			expect(TRightBrace, "Expected '}'");
-			return SBlock(stmts);
-		} else if (check(TKeyword(KEnd))) {
-			// Empty block - just 'fin'
-			advance();
-			return SBlock([]);
-		} else {
-			// Braceless block - parse until 'fin'
-			var stmts = parseBlockBody();
-			if (check(TKeyword(KEnd)))
-				advance(); // consume 'fin'
-			return SBlock(stmts);
-		}
+		expect(TLeftBrace, "Expected '{'");
+		var stmts = parseBlockBody();
+		expect(TRightBrace, "Expected '}'");
+		return SBlock(stmts);
 	}
 
 	function parseTryCatch():Stmt {
 		advance(); // consume 'try'
-		// Support both { } and Latino-style fin
-		var body:Array<Stmt>;
-		if (match(TLeftBrace)) {
-			body = parseBlockBody();
-			expect(TRightBrace, "Expected '}' after try body");
-		} else {
-			body = parseBlockBody();
-			if (check(TKeyword(KEnd))) advance();
-		}
+		expect(TLeftBrace, "Expected '{' after 'try'");
+		var body = parseBlockBody();
+		expect(TRightBrace, "Expected '}' after try body");
 
 		skipNewlines();
 		expect(TKeyword(KCatch), "Expected 'catch' after try body");
 		expect(TLeftParen, "Expected '(' after 'catch'");
 		var catchVar = expectIdentifier();
 		expect(TRightParen, "Expected ')' after catch variable");
-		// Support both { } and Latino-style fin
-		var catchBody:Array<Stmt>;
-		if (match(TLeftBrace)) {
-			catchBody = parseBlockBody();
-			expect(TRightBrace, "Expected '}' after catch body");
-		} else {
-			catchBody = parseBlockBody();
-			if (check(TKeyword(KEnd))) advance();
-		}
+		expect(TLeftBrace, "Expected '{' after catch clause");
+		var catchBody = parseBlockBody();
+		expect(TRightBrace, "Expected '}' after catch body");
 
 		return STryCatch(body, catchVar, catchBody);
 	}
@@ -620,7 +576,7 @@ class Parser {
 		var stmts:Array<Stmt> = [];
 		skipSeparators();
 
-		while (!check(TRightBrace) && !check(TKeyword(KEnd)) && !isEOF()) {
+		while (!check(TRightBrace) && !isEOF()) {
 			var stmt = parseStatement();
 			consumeStatementTerminator(stmt);
 			stmts.push(stmt);
@@ -795,7 +751,6 @@ class Parser {
 				case TOperator(OGreater): {advance(); OGreater;}
 				case TOperator(OLessEq): {advance(); OLessEq;}
 				case TOperator(OGreaterEq): {advance(); OGreaterEq;}
-				case TOperator(ORegex): {advance(); ORegex;}
 				default: break;
 			}
 
@@ -832,7 +787,6 @@ class Parser {
 			var op = switch (token) {
 				case TOperator(OAdd): {advance(); OAdd;}
 				case TOperator(OSub): {advance(); OSub;}
-				case TOperator(OConcat): {advance(); OConcat;}
 				default: break;
 			}
 
@@ -1612,7 +1566,6 @@ class Parser {
 		}
 
 		if (strictSemicolons) {
-			skipNewlines();
 			if (check(TRightBrace) || isEOF())
 				return;
 			expect(TSemicolon, "Expected ';' in strict mode");

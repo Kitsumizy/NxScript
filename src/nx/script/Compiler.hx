@@ -964,14 +964,6 @@ class Compiler {
 								case [_, VString(b)]: VString(constToString(lv) + b);
 								default: null;
 							}
-						case OConcat:
-							switch ([lv, rv]) {
-								case [VString(a), VString(b)]: VString(a + b);
-								case [VString(a), _]: VString(a + constToString(rv));
-								case [_, VString(b)]: VString(constToString(lv) + b);
-								case [VNumber(a), VNumber(b)]: VString(Std.string(a) + Std.string(b));
-								default: null;
-							}
 						case OSub:
 							switch ([lv, rv]) {
 								case [VNumber(a), VNumber(b)]: VNumber(a - b);
@@ -1127,8 +1119,6 @@ class Compiler {
 				emit(Op.SHIFT_LEFT);
 			case OShiftRight:
 				emit(Op.SHIFT_RIGHT);
-			case OConcat:
-				emit(Op.CONCAT);
 			default:
 				throw 'Unexpected binary operator: $op';
 		}

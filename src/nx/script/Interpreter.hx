@@ -84,10 +84,9 @@ class Interpreter {
 	 *   interp.run(sourceCode);
 	 */
 	public var optimize:Bool = false;
-
-	public var optimizeDCE:Bool = true; // Dead code elimination
-	public var optimizeConstantFolding:Bool = true; // Constant folding
-	public var optimizePeephole:Bool = true; // Peephole optimization
+	public var optimizeDCE:Bool = true;  // Dead code elimination
+	public var optimizeConstantFolding:Bool = true;  // Constant folding
+	public var optimizePeephole:Bool = true;  // Peephole optimization
 
 	/**
 	 * Run a script function once per native Haxe object — loop executes in Haxe, not in script.
@@ -186,7 +185,6 @@ class Interpreter {
 	 *   interp.run('myField = 5');     // writes to parent
 	 */
 	public var parent(get, set):Null<Dynamic>;
-
 	var _parent:Null<Dynamic> = null;
 
 	function get_parent():Null<Dynamic>
@@ -197,7 +195,6 @@ class Interpreter {
 		vm.parent = v;
 		return v;
 	}
-
 	public function new(debug:Bool = false, strict:Bool = false) {
 		this.debug = debug;
 		this.strictByDefault = strict;
@@ -208,402 +205,6 @@ class Interpreter {
 		registerBuiltins();
 	}
 
-	/**
-	 * Registers all built-in global functions (NxScript only)
-	 * For Latino builtins, use LatinoParser.registerBuiltins(interp)
-	 */
-	private function registerBuiltins():Void {
-		// Console output
-		vm.natives.set("trace", VNativeFunction("trace", -1, function(args:Array<Value>):Value {
-			var parts:Array<Dynamic> = [];
-			for (arg in args)
-				parts.push(vm.valueToString(arg));
-			#if sys
-			Sys.println(parts.join(" "));
-			#else
-			trace(parts.join(" "));
-			#end
-			return VNull;
-		}));
-
-		vm.natives.set("print", VNativeFunction("print", -1, function(args:Array<Value>):Value {
-			var parts:Array<Dynamic> = [];
-			for (arg in args)
-				parts.push(vm.valueToString(arg));
-			#if sys
-			Sys.print(parts.join(" "));
-			#else
-			trace(parts.join(" "));
-			#end
-			return VNull;
-		}));
-
-		vm.natives.set("println", VNativeFunction("println", -1, function(args:Array<Value>):Value {
-			var parts:Array<Dynamic> = [];
-			for (arg in args)
-				parts.push(vm.valueToString(arg));
-			#if sys
-			Sys.println(parts.join(" "));
-			#else
-			trace(parts.join(" "));
-			#end
-			return VNull;
-		}));
-
-		// Type
-		vm.natives.set("type", VNativeFunction("type", 1, function(args:Array<Value>):Value {
-			return VString(switch (args[0]) {
-				case VNumber(_): "Number";
-				case VString(_): "String";
-				case VBool(_): "Bool";
-				case VArray(_): "Array";
-				case VDict(_): "Dict";
-				case VNull: "Null";
-				case VFunction(_, _), VNativeFunction(_, _, _): "Function";
-				case VNativeObject(obj):
-					#if (js || html5)
-					if (Type.getClassName(Type.getClass(obj)) == "Date")
-						"Date"
-					else
-						"Object";
-					#elseif cpp
-					"Object";
-					#else
-					if (Std.isOfType(obj, Date))
-						"Date"
-					else
-						"Object";
-					#end
-				case VClass(_): "Class";
-				case VInstance(_, _, _): "Instance";
-				default: "Unknown";
-			});
-		}));
-
-		// Conversion
-		vm.natives.set("int", VNativeFunction("int", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Std.int(n);
-				case VString(s): try Std.parseInt(s) catch (e:Dynamic) 0;
-				default: 0;
-			});
-		}));
-		vm.natives.set("float", VNativeFunction("float", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): n;
-				case VString(s): try Std.parseFloat(s) catch (e:Dynamic) 0.0;
-				default: 0.0;
-			});
-		}));
-		vm.natives.set("str", VNativeFunction("str", 1, function(args:Array<Value>):Value {
-			return VString(vm.valueToString(args[0]));
-		}));
-
-		// Math
-		vm.natives.set("abs", VNativeFunction("abs", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.abs(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("floor", VNativeFunction("floor", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.floor(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("ceil", VNativeFunction("ceil", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.ceil(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("round", VNativeFunction("round", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.round(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("sqrt", VNativeFunction("sqrt", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.sqrt(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("pow", VNativeFunction("pow", 2, function(args:Array<Value>):Value {
-			var b = switch (args[0]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			var e = switch (args[1]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			return VNumber(Math.pow(b, e));
-		}));
-		vm.natives.set("sin", VNativeFunction("sin", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.sin(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("cos", VNativeFunction("cos", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.cos(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("tan", VNativeFunction("tan", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.tan(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("log", VNativeFunction("log", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.log(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("exp", VNativeFunction("exp", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VNumber(n): Math.exp(n);
-				default: 0;
-			});
-		}));
-		vm.natives.set("max", VNativeFunction("max", 2, function(args:Array<Value>):Value {
-			var a = switch (args[0]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			var b = switch (args[1]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			return VNumber(a > b ? a : b);
-		}));
-		vm.natives.set("min", VNativeFunction("min", 2, function(args:Array<Value>):Value {
-			var a = switch (args[0]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			var b = switch (args[1]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			return VNumber(a < b ? a : b);
-		}));
-		vm.natives.set("lerp", VNativeFunction("lerp", 3, function(args:Array<Value>):Value {
-			var a = switch (args[0]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			var b = switch (args[1]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			var t = switch (args[2]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			return VNumber(a + (b - a) * t);
-		}));
-		vm.natives.set("clamp", VNativeFunction("clamp", 3, function(args:Array<Value>):Value {
-			var v = switch (args[0]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			var minV = switch (args[1]) {
-				case VNumber(n): n;
-				default: 0.0;
-			}
-			var maxV = switch (args[2]) {
-				case VNumber(n): n;
-				default: 1.0;
-			}
-			return VNumber(Math.min(Math.max(v, minV), maxV));
-		}));
-
-		vm.natives.set("PI", VNumber(Math.PI));
-		vm.natives.set("E", VNumber(Math.exp(1)));
-		vm.natives.set("NaN", VNumber(Math.NaN));
-		vm.natives.set("Infinity", VNumber(Math.POSITIVE_INFINITY));
-
-		// Array
-		vm.natives.set("len", VNativeFunction("len", 1, function(args:Array<Value>):Value {
-			return VNumber(switch (args[0]) {
-				case VArray(arr): arr.length;
-				case VString(s): s.length;
-				case VDict(map): Lambda.count(map);
-				default: 0;
-			});
-		}));
-		vm.natives.set("range", VNativeFunction("range", -1, function(args:Array<Value>):Value {
-			var from = 0, to = 0;
-			if (args.length == 1)
-				to = switch (args[0]) {
-					case VNumber(n): Std.int(n);
-					default: throw "range expects a number";
-				};
-			else if (args.length == 2) {
-				from = switch (args[0]) {
-					case VNumber(n): Std.int(n);
-					default: throw "range expects numbers";
-				};
-				to = switch (args[1]) {
-					case VNumber(n): Std.int(n);
-					default: throw "range expects numbers";
-				};
-			} else
-				throw "range expects 1 or 2 arguments";
-			return VArray([for (i in from...to) VNumber(i)]);
-		}));
-		vm.natives.set("push", VNativeFunction("push", 2, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VArray(arr):
-					arr.push(args[1]);
-					VNumber(arr.length);
-				default: throw "push() requires an array";
-			}
-		}));
-		vm.natives.set("pop", VNativeFunction("pop", 1, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VArray(arr): arr.length > 0 ? arr.pop() : VNull;
-				default: throw "pop() requires an array";
-			}
-		}));
-		vm.natives.set("first", VNativeFunction("first", 1, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VArray(arr): arr.length > 0 ? arr[0] : VNull;
-				default: throw "first() requires an array";
-			}
-		}));
-		vm.natives.set("last", VNativeFunction("last", 1, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VArray(arr): arr.length > 0 ? arr[arr.length - 1] : VNull;
-				default: throw "last() requires an array";
-			}
-		}));
-		vm.natives.set("contains", VNativeFunction("contains", 2, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VArray(arr): VBool(Lambda.exists(arr, function(v) return vm.valueToString(v) == vm.valueToString(args[1])));
-				case VString(s): switch (args[1]) {
-						case VString(needle): VBool(s.indexOf(needle) >= 0);
-						default: VBool(false);
-					}
-				case VDict(map):
-					var key = switch (args[1]) {
-						case VString(k): k;
-						default: vm.valueToString(args[1]);
-					};
-					VBool(map.exists(key));
-				default: throw "contains(container, value) expects array, string, or dict";
-			}
-		}));
-		vm.natives.set("keys", VNativeFunction("keys", 1, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VDict(map):
-					var out:Array<Value> = [];
-					for (k in map.keys())
-						out.push(VString(k));
-					VArray(out);
-				default: throw "keys(dict) expects a dictionary";
-			}
-		}));
-		vm.natives.set("values", VNativeFunction("values", 1, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VDict(map):
-					var out:Array<Value> = [];
-					for (k in map.keys())
-						out.push(map.get(k));
-					VArray(out);
-				default: throw "values(dict) expects a dictionary";
-			}
-		}));
-
-		// String
-		vm.natives.set("upper", VNativeFunction("upper", 1, function(args:Array<Value>):Value {
-			return VString(switch (args[0]) {
-				case VString(s): s.toUpperCase();
-				default: "";
-			});
-		}));
-		vm.natives.set("lower", VNativeFunction("lower", 1, function(args:Array<Value>):Value {
-			return VString(switch (args[0]) {
-				case VString(s): s.toLowerCase();
-				default: "";
-			});
-		}));
-		vm.natives.set("trim", VNativeFunction("trim", 1, function(args:Array<Value>):Value {
-			return VString(switch (args[0]) {
-				case VString(s): StringTools.trim(s);
-				default: "";
-			});
-		}));
-		vm.natives.set("split", VNativeFunction("split", 2, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VString(s): switch (args[1]) {
-						case VString(d): VArray([for (p in s.split(d)) VString(p)]);
-						default: throw "delimiter must be string";
-					};
-				default: throw "split() requires a string";
-			}
-		}));
-		vm.natives.set("join", VNativeFunction("join", 2, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VArray(arr):
-					var strs = [for (v in arr) vm.valueToString(v)];
-					switch (args[1]) {
-						case VString(sep): VString(strs.join(sep));
-						default: VString(strs.join(vm.valueToString(args[1])));
-					};
-				default: throw "join() requires an array";
-			}
-		}));
-		vm.natives.set("substr", VNativeFunction("substr", -1, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VString(s):
-					var start = switch (args[1]) {
-						case VNumber(n): Std.int(n);
-						default: 0;
-					};
-					var length = if (args.length > 2) switch (args[2]) {
-						case VNumber(n): Std.int(n);
-						default: s.length - start;
-					} else s.length - start;
-					VString(s.substr(start, length));
-				default: VString("");
-			}
-		}));
-		vm.natives.set("includes", VNativeFunction("includes", 2, function(args:Array<Value>):Value {
-			return switch (args[0]) {
-				case VString(s): switch (args[1]) {
-						case VString(needle): VBool(s.indexOf(needle) >= 0);
-						default: VBool(false);
-					};
-				default: VBool(false);
-			}
-		}));
-
-		// Script
-		vm.natives.set("convokeScript", VNativeFunction("convokarScript", 1, function(args:Array<Value>):Value {
-			var path = switch (args[0]) {
-				case VString(s): s;
-				default: throw "convokarScript(path) expects a string";
-			};
-			return this.runFile(path);
-		}));
-
-		// Constants
-		globals.set("PI", VNumber(Math.PI));
-		globals.set("E", VNumber(Math.exp(1)));
-		globals.set("NaN", VNumber(Math.NaN));
-		globals.set("Infinity", VNumber(Math.POSITIVE_INFINITY));
-	}
-
-	/**
-	 * Registers all built-in global functions
-	 */
 	/**
 	 * Set the parent scope object for variable lookups.
 	 * Fluent API for setting parent.
@@ -617,6 +218,396 @@ class Interpreter {
 	 * Registers all built-in global functions (trace, print, len, range, type, math stuff, etc).
 	 * Called once in new(). Don't call it again unless you like duplicate registrations.
 	 */
+	private function registerBuiltins():Void {
+		// Console output
+		register("trace", -1, function(args:Array<Value>):Value {
+			var parts:Array<Dynamic> = [];
+			for (arg in args) {
+				parts.push(vm.valueToString(arg));
+			}
+
+			// Get current instruction line info
+			var lineInfo = "";
+			if (vm.currentInstruction != null) {
+				lineInfo = '${normalizeScriptPath(vm.scriptName)}:${vm.currentInstruction.line}: ';
+			}
+			#if sys
+			Sys.println(lineInfo + parts.join(" "));
+			#else
+			trace(lineInfo + parts.join(" "));
+			#end
+
+			return VNull;
+		});
+
+		register("print", -1, function(args:Array<Value>):Value {
+			var parts:Array<Dynamic> = [];
+			for (arg in args) {
+				parts.push(vm.valueToString(arg));
+			}
+			#if sys
+			Sys.print(parts.join(" "));
+			#else
+			trace(parts.join(" "));
+			#end
+			return VNull;
+		});
+
+		register("println", -1, function(args:Array<Value>):Value {
+			var parts:Array<Dynamic> = [];
+			for (arg in args) {
+				parts.push(vm.valueToString(arg));
+			}
+			#if sys
+			Sys.println(parts.join(" "));
+			#else
+			trace(parts.join(" "));
+			#end
+			return VNull;
+		});
+
+		// Type checking
+		register("typeof", 1, function(args:Array<Value>):Value {
+			return VString(switch (args[0]) {
+				case VNull: "null";
+				case VBool(_): "bool";
+				case VNumber(_): "number";
+				case VString(_): "string";
+				case VArray(_): "array";
+				case VDict(_): "dict";
+				case VFunction(_, _): "function";
+				case VClass(_): "class";
+				case VInstance(className, _, _): "instance";
+				case VNativeFunction(_, _, _): "function";
+				case VNativeObject(_): "object";
+				case VIterator(_, _): "iterator";
+				case VEnumValue(eName, _, _): eName;
+			});
+		});
+
+		// Type conversion
+		register("int", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.floor(n);
+				case VString(s): Std.parseInt(s);
+				case VBool(b): b ? 1 : 0;
+				default: 0;
+			});
+		});
+
+		register("float", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): n;
+				case VString(s): Std.parseFloat(s);
+				case VBool(b): b ? 1.0 : 0.0;
+				default: 0.0;
+			});
+		});
+
+		register("str", 1, function(args:Array<Value>):Value {
+			return VString(vm.valueToString(args[0]));
+		});
+
+		register("bool", 1, function(args:Array<Value>):Value {
+			return VBool(switch (args[0]) {
+				case VNull: false;
+				case VBool(b): b;
+				case VNumber(n): n != 0;
+				case VString(s): s.length > 0;
+				default: true;
+			});
+		});
+
+		// Math functions
+		register("abs", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.abs(n);
+				default: 0;
+			});
+		});
+
+		register("floor", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.floor(n);
+				default: 0;
+			});
+		});
+
+		register("ceil", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.ceil(n);
+				default: 0;
+			});
+		});
+
+		register("round", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.round(n);
+				default: 0;
+			});
+		});
+
+		register("sqrt", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.sqrt(n);
+				default: 0;
+			});
+		});
+
+		register("pow", 2, function(args:Array<Value>):Value {
+			var base = switch (args[0]) {
+				case VNumber(n): n;
+				default: 0.0;
+			}
+			var exp = switch (args[1]) {
+				case VNumber(n): n;
+				default: 0.0;
+			}
+			return VNumber(Math.pow(base, exp));
+		});
+
+		register("sin", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.sin(n);
+				default: 0;
+			});
+		});
+
+		register("cos", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.cos(n);
+				default: 0;
+			});
+		});
+
+		register("tan", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VNumber(n): Math.tan(n);
+				default: 0;
+			});
+		});
+
+		register("min", 2, function(args:Array<Value>):Value {
+			var a = switch (args[0]) {
+				case VNumber(n): n;
+				default: 0.0;
+			}
+			var b = switch (args[1]) {
+				case VNumber(n): n;
+				default: 0.0;
+			}
+			return VNumber(Math.min(a, b));
+		});
+
+		register("max", 2, function(args:Array<Value>):Value {
+			var a = switch (args[0]) {
+				case VNumber(n): n;
+				default: 0.0;
+			}
+			var b = switch (args[1]) {
+				case VNumber(n): n;
+				default: 0.0;
+			}
+			return VNumber(Math.max(a, b));
+		});
+
+		register("random", 0, function(args:Array<Value>):Value {
+			return VNumber(Math.random());
+		});
+
+		register("clamp", 3, function(args:Array<Value>):Value {
+			var value = switch (args[0]) {
+				case VNumber(n): n;
+				default: throw "clamp(value, min, max) expects numbers";
+			}
+			var minV = switch (args[1]) {
+				case VNumber(n): n;
+				default: throw "clamp(value, min, max) expects numbers";
+			}
+			var maxV = switch (args[2]) {
+				case VNumber(n): n;
+				default: throw "clamp(value, min, max) expects numbers";
+			}
+			if (minV > maxV)
+				throw "clamp(value, min, max): min must be <= max";
+			return VNumber(Math.min(Math.max(value, minV), maxV));
+		});
+
+		register("lerp", 3, function(args:Array<Value>):Value {
+			var a = switch (args[0]) {
+				case VNumber(n): n;
+				default: throw "lerp(a, b, t) expects numbers";
+			}
+			var b = switch (args[1]) {
+				case VNumber(n): n;
+				default: throw "lerp(a, b, t) expects numbers";
+			}
+			var t = switch (args[2]) {
+				case VNumber(n): n;
+				default: throw "lerp(a, b, t) expects numbers";
+			}
+			return VNumber(a + (b - a) * t);
+		});
+
+		// Array functions
+		register("len", 1, function(args:Array<Value>):Value {
+			return VNumber(switch (args[0]) {
+				case VArray(arr): arr.length;
+				case VString(s): s.length;
+				case VDict(map): Lambda.count(map);
+				default: 0;
+			});
+		});
+
+		register("push", 2, function(args:Array<Value>):Value {
+			switch (args[0]) {
+				case VArray(arr):
+					arr.push(args[1]);
+					return VNull;
+				default:
+					throw "push() requires an array";
+			}
+		});
+
+		register("pop", 1, function(args:Array<Value>):Value {
+			return switch (args[0]) {
+				case VArray(arr): arr.length > 0 ? arr.pop() : VNull;
+				default: throw "pop() requires an array";
+			}
+		});
+
+		// range: variadic — range(n) -> [0..n-1], range(from, to) -> [from..to-1]
+		vm.natives.set("range", VNativeFunction("range", -1, function(args:Array<Value>):Value {
+			var from = 0;
+			var to = 0;
+			if (args.length == 1) {
+				to = switch (args[0]) {
+					case VNumber(n): Std.int(n);
+					default: throw "range expects a number";
+				};
+			} else if (args.length == 2) {
+				from = switch (args[0]) {
+					case VNumber(n): Std.int(n);
+					default: throw "range expects numbers";
+				};
+				to = switch (args[1]) {
+					case VNumber(n): Std.int(n);
+					default: throw "range expects numbers";
+				};
+			} else {
+				throw "range expects 1 or 2 arguments";
+			}
+			return VArray([for (i in from...to) VNumber(i)]);
+		}));
+
+		register("contains", 2, function(args:Array<Value>):Value {
+			return switch (args[0]) {
+				case VArray(arr):
+					VBool(Lambda.exists(arr, function(v) return vm.valueToString(v) == vm.valueToString(args[1])));
+				case VString(s):
+					switch (args[1]) {
+						case VString(needle): VBool(s.indexOf(needle) >= 0);
+						default: VBool(false);
+					}
+				case VDict(map):
+					var key = switch (args[1]) {
+						case VString(k): k;
+						default: vm.valueToString(args[1]);
+					}
+					VBool(map.exists(key));
+				default:
+					throw "contains(container, value) expects array, string, or dict";
+			}
+		});
+
+		register("keys", 1, function(args:Array<Value>):Value {
+			return switch (args[0]) {
+				case VDict(map):
+					var out:Array<Value> = [];
+					for (k in map.keys())
+						out.push(VString(k));
+					VArray(out);
+				default:
+					throw "keys(dict) expects a dictionary";
+			}
+		});
+
+		register("values", 1, function(args:Array<Value>):Value {
+			return switch (args[0]) {
+				case VDict(map):
+					var out:Array<Value> = [];
+					for (k in map.keys())
+						out.push(map.get(k));
+					VArray(out);
+				default:
+					throw "values(dict) expects a dictionary";
+			}
+		});
+
+		// String functions
+		register("upper", 1, function(args:Array<Value>):Value {
+			return VString(switch (args[0]) {
+				case VString(s): s.toUpperCase();
+				default: "";
+			});
+		});
+
+		register("lower", 1, function(args:Array<Value>):Value {
+			return VString(switch (args[0]) {
+				case VString(s): s.toLowerCase();
+				default: "";
+			});
+		});
+
+		register("trim", 1, function(args:Array<Value>):Value {
+			return VString(switch (args[0]) {
+				case VString(s): StringTools.trim(s);
+				default: "";
+			});
+		});
+
+		register("split", 2, function(args:Array<Value>):Value {
+			var source = switch (args[0]) {
+				case VString(s): s;
+				default: throw "split(string, separator) expects strings";
+			}
+			var separator = switch (args[1]) {
+				case VString(s): s;
+				default: throw "split(string, separator) expects strings";
+			}
+			return VArray([for (part in source.split(separator)) VString(part)]);
+		});
+
+		register("join", 2, function(args:Array<Value>):Value {
+			var arr = switch (args[0]) {
+				case VArray(values): values;
+				default: throw "join(array, separator) expects an array as first argument";
+			}
+			var separator = switch (args[1]) {
+				case VString(s): s;
+				default: throw "join(array, separator) expects a string separator";
+			}
+			var parts:Array<String> = [];
+			for (v in arr)
+				parts.push(vm.valueToString(v));
+			return VString(parts.join(separator));
+		});
+
+		register("convokeScript", 1, function(args:Array<Value>):Value {
+			var scriptPath = switch (args[0]) {
+				case VString(s): s;
+				default: throw "convokeScript(path) expects a string path";
+			};
+			return runFile(scriptPath);
+		});
+
+		// Constants
+		globals.set("PI", VNumber(Math.PI));
+		globals.set("E", VNumber(Math.exp(1)));
+		globals.set("NaN", VNumber(Math.NaN));
+		globals.set("Infinity", VNumber(Math.POSITIVE_INFINITY));
+	}
+
 	/**
 	 * Run source code and return the result
 	 */
@@ -1240,9 +1231,11 @@ class Interpreter {
 		register(name, arity, fn);
 
 	/** Call a named function from scripts or native methods */
-	public function call(name:String, args:Array<Dynamic>):Value {
+	public function call(name:String, args:Array<Dynamic>):Value
+	{
 		// fast path
-		if (args.length == 0 || Std.isOfType(args[0], Value)) {
+		if (args.length == 0 || Std.isOfType(args[0], Value))
+		{
 			return vm.callMethod(name, cast args);
 		}
 
@@ -1273,12 +1266,13 @@ class Interpreter {
 		if (!Std.isOfType(value, Value))
 			value = vm.haxeToValue(value);
 
+
 		vm.setById(id, value);
 	}
 
 	/** Alias for setId. */
 	public inline function setById(id:Int, value:Value):Void
-		setId(id, value);
+		setId(id, value); 
 
 	/** Resolve global ID by name, returns -1 if not compiled/bound. */
 	public function globalId(name:String):Int {
