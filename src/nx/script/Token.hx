@@ -46,6 +46,14 @@ enum Keyword {
 	KIs; // type check: x is SomeType
 	KPublic; // access modifier (parser-only placeholder)
 	KPrivate; // access modifier (parser-only placeholder)
+	KImport; // import
+	KEnd; // fin - end block (Latino)
+	KList; // lista - list/array (Latino)
+	KDict; // diccionario - dictionary (Latino)
+	KUntil; // hasta - until (Latino)
+	KInclude; // incluir - include module (Latino)
+	KElect; // elegir - switch (Latino)
+	KRepeat; // repetir - do-while (Latino)
 }
 
 /**
@@ -66,6 +74,7 @@ enum Operator {
 	OGreater; // >
 	OLessEq; // <=
 	OGreaterEq; // >=
+	ORegex; // ~= regex match (Latino)
 
 	// Logical
 	OAnd; // &&
@@ -83,6 +92,7 @@ enum Operator {
 	OModAssign; // %=
 	OIncrement; // ++
 	ODecrement; // --
+	OConcat; // .. string concat (Latino)
 
 	// Bitwise
 	OBitAnd; // &

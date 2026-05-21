@@ -1,0 +1,10 @@
+# Ejemplo básico en Latino
+# Hola Mundo
+
+escribir("¡Hola Mundo!")
+
+# Variables
+variable nombre = "Latino"
+variable edad = 5
+
+escribir("Soy " + nombre + " y tengo " + edad + " años")

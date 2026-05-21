@@ -1,0 +1,3 @@
+// Hello World in NxScript
+
+trace("Hello World!")

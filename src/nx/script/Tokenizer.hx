@@ -64,7 +64,17 @@ class Tokenizer {
 		"static" => KStatic,
 		"is" => KIs,
 		"public" => KPublic,
-		"private" => KPrivate
+		"private" => KPrivate,
+		"import" => KImport,
+		"importar" => KImport,
+		"fin" => KEnd,
+		"lista" => KList,
+		"diccionario" => KDict,
+		"repetir" => KRepeat,
+		"hasta" => KUntil,
+		"elegir" => KElect,
+		"incluir" => KInclude,
+		"otro" => KDefault
 	];
 
 	public function new() {}
@@ -648,6 +658,11 @@ class Tokenizer {
 					advance();
 					return TRange;
 				}
+				if (peekNext() == '.') {
+					advance();
+					advance();
+					return TOperator(OConcat);
+				}
 				return TDot;
 
 			case '+':
@@ -673,6 +688,10 @@ class Tokenizer {
 				}
 				return TOperator(OMod);
 			case '~':
+				if (peek() == '=') {
+					advance();
+					return TOperator(ORegex);
+				}
 				return TOperator(OBitNot);
 			case '^':
 				return TOperator(OBitXor);
