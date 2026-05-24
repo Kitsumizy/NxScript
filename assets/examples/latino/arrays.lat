@@ -1,0 +1,25 @@
+# Arrays en Latino
+
+variable frutas = ["manzana", "banana", "naranja"]
+
+# Acceder a elementos
+escribir("Primera fruta: " + frutas[0])
+escribir("Última fruta: " + frutas[-1])
+
+# Iterar sobre array
+para fruta en frutas {
+    escribir("Fruta: " + fruta)
+}
+
+# Operaciones con arrays
+empujar(frutas, "uva")
+escribir("Array completo: " + frutas)
+
+variable longitud = longitud(frutas)
+escribir("Longitud: " + longitud)
+
+# String operations
+variable texto = "  Hola Mundo  "
+escribir("Mayúsculas: " + mayusculas(texto))
+escribir("Minúsculas: " + minusculas(texto))
+escribir("Recortado: " + recortar(texto))

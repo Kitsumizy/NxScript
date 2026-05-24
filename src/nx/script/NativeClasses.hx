@@ -15,6 +15,203 @@ import nx.script.Bytecode.FunctionChunk;
  * Extending these from script code is technically allowed. Results may vary.
  */
 class NativeClasses {
+	private static function numberResolver():Value->String->Null<Value> {
+		return function(self:Value, field:String):Null<Value> {
+			return switch (self) {
+				case VNumber(n):
+					switch (field) {
+						// Rounding
+						case "floor": VNativeFunction("floor", 0, (_) -> VNumber(Math.floor(n)));
+						case "ceil": VNativeFunction("ceil", 0, (_) -> VNumber(Math.ceil(n)));
+						case "round": VNativeFunction("round", 0, (_) -> VNumber(Math.round(n)));
+						case "abs": VNativeFunction("abs", 0, (_) -> VNumber(Math.abs(n)));
+
+						// Roots & Powers
+						case "sqrt": VNativeFunction("sqrt", 0, (_) -> VNumber(Math.sqrt(n)));
+						case "pow": VNativeFunction("pow", 1, (args) -> switch (args[0]) {
+								case VNumber(exp): VNumber(Math.pow(n, exp));
+								default: throw 'Expected number';
+							});
+
+						// Trigonometry
+						case "sin": VNativeFunction("sin", 0, (_) -> VNumber(Math.sin(n)));
+						case "cos": VNativeFunction("cos", 0, (_) -> VNumber(Math.cos(n)));
+						case "tan": VNativeFunction("tan", 0, (_) -> VNumber(Math.tan(n)));
+						case "asin": VNativeFunction("asin", 0, (_) -> VNumber(Math.asin(n)));
+						case "acos": VNativeFunction("acos", 0, (_) -> VNumber(Math.acos(n)));
+						case "atan": VNativeFunction("atan", 0, (_) -> VNumber(Math.atan(n)));
+
+						// Type conversions
+						case "int": VNativeFunction("int", 0, (_) -> VNumber(Math.floor(n)));
+						case "float": VNativeFunction("float", 0, (_) -> VNumber(n));
+						case "str": VNativeFunction("str", 0, (_) -> VString(Std.string(n)));
+						case "bool": VNativeFunction("bool", 0, (_) -> VBool(n != 0));
+
+						// Basic arithmetic
+						case "add": VNativeFunction("add", 1, (args) -> switch (args[0]) {
+								case VNumber(x): VNumber(n + x);
+								default: throw 'Expected number';
+							});
+						case "sub": VNativeFunction("sub", 1, (args) -> switch (args[0]) {
+								case VNumber(x): VNumber(n - x);
+								default: throw 'Expected number';
+							});
+						case "mul": VNativeFunction("mul", 1, (args) -> switch (args[0]) {
+								case VNumber(x): VNumber(n * x);
+								default: throw 'Expected number';
+							});
+						case "div": VNativeFunction("div", 1, (args) -> switch (args[0]) {
+								case VNumber(x): VNumber(n / x);
+								default: throw 'Expected number';
+							});
+						case "mod": VNativeFunction("mod", 1, (args) -> switch (args[0]) {
+								case VNumber(x): VNumber(n % x);
+								default: throw 'Expected number';
+							});
+
+						// Comparison
+						case "min": VNativeFunction("min", 1, (args) -> switch (args[0]) {
+								case VNumber(x): VNumber(Math.min(n, x));
+								default: throw 'Expected number';
+							});
+						case "max": VNativeFunction("max", 1, (args) -> switch (args[0]) {
+								case VNumber(x): VNumber(Math.max(n, x));
+								default: throw 'Expected number';
+							});
+
+						default: null;
+					}
+				default: null;
+			}
+		};
+	}
+
+	private static function stringResolver():Value->String->Null<Value> {
+		return function(self:Value, field:String):Null<Value> {
+			return switch (self) {
+				case VString(s):
+					switch (field) {
+						// Properties
+						case "length": VNumber(s.length);
+
+						// Case conversion
+						case "upper": VNativeFunction("upper", 0, (_) -> VString(s.toUpperCase()));
+						case "lower": VNativeFunction("lower", 0, (_) -> VString(s.toLowerCase()));
+
+						// Trimming
+						case "trim": VNativeFunction("trim", 0, (_) -> VString(StringTools.trim(s)));
+
+						// Type conversion
+						case "int": VNativeFunction("int", 0, (_) -> VNumber(Std.parseInt(s) != null ? Std.parseInt(s) : 0));
+						case "float": VNativeFunction("float", 0, (_) -> VNumber(Std.parseFloat(s)));
+						case "bool": VNativeFunction("bool", 0, (_) -> VBool(s.length > 0));
+
+						// Search
+						case "contains": VNativeFunction("contains", 1, (args) -> switch (args[0]) {
+								case VString(search): VBool(s.indexOf(search) >= 0);
+								default: throw 'Expected string';
+							});
+						case "indexOf": VNativeFunction("indexOf", 1, (args) -> switch (args[0]) {
+								case VString(search): VNumber(s.indexOf(search));
+								default: throw 'Expected string';
+							});
+
+						// Substrings
+						case "charAt": VNativeFunction("charAt", 1, (args) -> switch (args[0]) {
+								case VNumber(i): VString(s.charAt(Std.int(i)));
+								default: throw 'Expected number';
+							});
+						case "substr": VNativeFunction("substr", 2, (args) -> {
+								var start = switch (args[0]) {
+									case VNumber(n): Std.int(n);
+									default: 0;
+								};
+								var len = switch (args[1]) {
+									case VNumber(n): Std.int(n);
+									default: s.length;
+								};
+								VString(s.substr(start, len));
+							});
+
+						// Split/Join
+						case "split": VNativeFunction("split", 1, (args) -> switch (args[0]) {
+								case VString(delim): VArray([for (part in s.split(delim)) VString(part)]);
+								default: throw 'Expected string';
+							});
+
+						// Search extras
+						case "startsWith": VNativeFunction("startsWith", 1, (args) -> switch (args[0]) {
+								case VString(prefix): VBool(s.length >= prefix.length && s.substr(0, prefix.length) == prefix);
+								default: throw 'Expected string';
+							});
+						case "endsWith": VNativeFunction("endsWith", 1, (args) -> switch (args[0]) {
+								case VString(suffix): VBool(s.length >= suffix.length && s.substr(s.length - suffix.length) == suffix);
+								default: throw 'Expected string';
+							});
+
+						// Modification
+						case "replace": VNativeFunction("replace", 2, (args) -> {
+								var from = switch (args[0]) {
+									case VString(x): x;
+									default: throw 'Expected string';
+								};
+								var to = switch (args[1]) {
+									case VString(x): x;
+									default: throw 'Expected string';
+								};
+								VString(StringTools.replace(s, from, to));
+							});
+						case "repeat": VNativeFunction("repeat", 1, (args) -> switch (args[0]) {
+								case VNumber(n):
+									var count = Std.int(n);
+									if (count < 0)
+										throw 'repeat count must be >= 0';
+									var sb = new StringBuf();
+									for (_ in 0...count)
+										sb.add(s);
+									VString(sb.toString());
+								default: throw 'Expected number';
+							});
+						case "padStart": VNativeFunction("padStart", 2, (args) -> {
+								var len = switch (args[0]) {
+									case VNumber(n): Std.int(n);
+									default: throw 'Expected number';
+								};
+								var pad = switch (args[1]) {
+									case VString(x): x;
+									default: " ";
+								};
+								if (pad.length == 0)
+									pad = " ";
+								var result = s;
+								while (result.length < len)
+									result = pad + result;
+								VString(result.substr(result.length - Std.int(Math.max(len, s.length))));
+							});
+						case "padEnd": VNativeFunction("padEnd", 2, (args) -> {
+								var len = switch (args[0]) {
+									case VNumber(n): Std.int(n);
+									default: throw 'Expected number';
+								};
+								var pad = switch (args[1]) {
+									case VString(x): x;
+									default: " ";
+								};
+								if (pad.length == 0)
+									pad = " ";
+								var result = s;
+								while (result.length < len)
+									result = result + pad;
+								VString(result.substr(0, Std.int(Math.max(len, s.length))));
+							});
+
+						default: null;
+					}
+				default: null;
+			}
+		};
+	}
+
 	/**
 	 * Registers all native classes. Call once per VM. Calling it twice will overwrite the first
 	 * registration and waste a few microseconds. Don't do that.
@@ -71,7 +268,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: null
 		};
 
 		vm.classes.set("Object", classData);
@@ -95,7 +293,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: stringResolver()
 		};
 
 		vm.classes.set("String", classData);
@@ -118,7 +317,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: numberResolver()
 		};
 
 		vm.classes.set("Number", classData);
@@ -132,7 +332,7 @@ class NativeClasses {
 
 	private static function registerInt(vm:VM):Void {
 		var methods = new Map<String, FunctionChunk>();
-		var fields  = new Map<String, Value>();
+		var fields = new Map<String, Value>();
 
 		var classData:ClassData = {
 			name: "Int",
@@ -142,7 +342,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: null
 		};
 
 		vm.classes.set("Int", classData);
@@ -168,7 +369,7 @@ class NativeClasses {
 
 	private static function registerFloat(vm:VM):Void {
 		var methods = new Map<String, FunctionChunk>();
-		var fields  = new Map<String, Value>();
+		var fields = new Map<String, Value>();
 
 		var classData:ClassData = {
 			name: "Float",
@@ -178,7 +379,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: null
 		};
 
 		vm.classes.set("Float", classData);
@@ -205,7 +407,7 @@ class NativeClasses {
 				case VBool(b): VNumber(b ? 1.0 : 0.0);
 				case VString(s):
 					var n = Std.parseFloat(s);
-					Math.isNaN(n) ? throw 'fromNumber: cannot parse "${s}"' : VNumber(n);
+					Math.isNaN(n) ?throw 'fromNumber: cannot parse "${s}"':VNumber(n);
 				default: throw "fromNumber expects a Number, Bool, or numeric String";
 			};
 		}));
@@ -219,7 +421,7 @@ class NativeClasses {
 					VNumber(Math.floor(n));
 				case VString(s):
 					var n = Std.parseInt(s);
-					n == null ? throw 'fromInt: cannot parse "${s}"' : VNumber(n);
+					n == null ?throw 'fromInt: cannot parse "${s}"':VNumber(n);
 				default: throw "fromInt expects a Number or numeric String";
 			};
 		}));
@@ -230,7 +432,7 @@ class NativeClasses {
 				case VNumber(n): VNumber(n);
 				case VString(s):
 					var n = Std.parseFloat(s);
-					Math.isNaN(n) ? throw 'fromFloat: cannot parse "${s}"' : VNumber(n);
+					Math.isNaN(n) ?throw 'fromFloat: cannot parse "${s}"':VNumber(n);
 				default: throw "fromFloat expects a Number or numeric String";
 			};
 		}));
@@ -253,7 +455,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: null
 		};
 
 		vm.classes.set("Bool", classData);
@@ -277,7 +480,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: null
 		};
 
 		vm.classes.set("Array", classData);
@@ -301,7 +505,8 @@ class NativeClasses {
 			fields: fields,
 			constructor: null,
 			staticFields: new Map(),
-			staticMethods: new Map()
+			staticMethods: new Map(),
+			nativeMemberResolver: null
 		};
 
 		vm.classes.set("Function", classData);

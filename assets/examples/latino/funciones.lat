@@ -1,0 +1,26 @@
+# Funciones en Latino
+
+funcion saludar(nombre) {
+    retornar "Hola " + nombre + "!"
+}
+
+escribir(saludar("Ana"))
+escribir(saludar("Carlos"))
+
+# Función con múltiples parámetros
+funcion sumar(a, b) {
+    retornar a + b
+}
+
+variable resultado = sumar(5, 3)
+escribir("5 + 3 = " + resultado)
+
+# Función recursiva - Fibonacci
+funcion fibonacci(n) {
+    si n <= 1 {
+        retornar n
+    }
+    retornar fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+escribir("Fibonacci(10) = " + fibonacci(10))

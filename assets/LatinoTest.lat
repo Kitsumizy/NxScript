@@ -1,0 +1,9 @@
+// http request de haxe
+funcion datos_obtenidos (respuesta)
+    si (respuesta == nulo )
+        escribir("Error al obtener datos")
+    fin
+    escribir("Datos obtenidos: ".. respuesta)
+fin
+
+achetetepe('https://jsonplaceholder.typicode.com/todos/1', datos_obtenidos)

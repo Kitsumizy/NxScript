@@ -53,3 +53,5 @@ node_modules/
 !bin/cppSwitch_scriptbench/
 !bin/cppSwitch_scriptbench/wrapper_src
 !bin/cppSwitch_scriptbench/wrapper_src/**
+/test/bench/cpp
+image.png
