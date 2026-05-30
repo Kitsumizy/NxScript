@@ -3368,6 +3368,10 @@ class VM {
 			case VNumber(n): VNumber(Math.tan(n));
 			default: throw 'Expected number';
 		}));
+		natives.set("exp", VNativeFunction("exp", 1, (args) -> switch (args[0]) {
+			case VNumber(n): VNumber(Math.exp(n));
+			default: throw 'Expected number';
+		}));
 	}
 
 	#if nx_profile
