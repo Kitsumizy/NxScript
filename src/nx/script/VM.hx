@@ -3368,10 +3368,27 @@ class VM {
 			case VNumber(n): VNumber(Math.tan(n));
 			default: throw 'Expected number';
 		}));
+		natives.set("asin", VNativeFunction("asin", 1, (args) -> switch (args[0]) {
+			case VNumber(n): VNumber(Math.asin(n));
+			default: throw 'Expected number';
+		}));
+		natives.set("acos", VNativeFunction("acos", 1, (args) -> switch (args[0]) {
+			case VNumber(n): VNumber(Math.acos(n));
+			default: throw 'Expected number';
+		}));
+		natives.set("atan", VNativeFunction("atan", 1, (args) -> switch (args[0]) {
+			case VNumber(n): VNumber(Math.atan(n));
+			default: throw 'Expected number';
+		}));
+		natives.set("atan2", VNativeFunction("atan2", 2, (args) -> switch [args[0], args[1]] {
+			case [VNumber(a), VNumber(b)]: VNumber(Math.atan2(a, b));
+			default: throw 'Expected numbers';
+		}));
 		natives.set("exp", VNativeFunction("exp", 1, (args) -> switch (args[0]) {
 			case VNumber(n): VNumber(Math.exp(n));
 			default: throw 'Expected number';
 		}));
+		
 	}
 
 	#if nx_profile
