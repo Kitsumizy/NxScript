@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@v1
+        with:
+          haxe-version: "4.3.4"
+
+      - name: Install nxscript from local source
+        run: haxelib dev nxscript src/
+
+      - name: Run basic tests
+        working-directory: test/tests
+        run: haxe config/basic.hxml
+
+      - name: Run classes tests
+        working-directory: test/tests
+        run: haxe config/classes.hxml
+
+      - name: Run methods tests
+        working-directory: test/tests
+        run: haxe config/methods.hxml
+
+      - name: Run switch/case tests
+        working-directory: test/tests
+        run: haxe config/switchcases.hxml
+
+      - name: Run bugfix regression tests
+        working-directory: test/tests
+        run: haxe config/bugfix.hxml
+
+      - name: Run import tests
+        working-directory: test/tests
+        run: haxe config/imports.hxml
+
+      - name: Run error format tests
+        working-directory: test/tests
+        run: haxe config/errors.hxml
+
+      # - name: Run Haxe parser tests
+      #   working-directory: test/tests
+      #   run: haxe config/haxeparser.hxml
+
+      - name: Run bridge/using tests
+        working-directory: test/tests
+        run: haxe config/bridge_using.hxml
+
+      - name: Run static/preprocessor tests
+        working-directory: test/tests
+        run: haxe config/static_preprocessor.hxml

@@ -1,0 +1,20 @@
+// Functions in NxScript
+
+func greet(name) {
+    return "Hello " + name + "!"
+}
+
+trace(greet("NxScript"))
+trace(greet("Haxe"))
+
+// Function with default parameters
+func sum(a, b = 0) {
+    return a + b
+}
+
+trace("5 + 3 = " + sum(5, 3))
+trace("5 + 0 = " + sum(5))
+
+// Arrow functions
+var square = (x) => x * x
+trace("Square of 7: " + square(7))

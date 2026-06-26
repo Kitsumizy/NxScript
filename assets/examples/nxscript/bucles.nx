@@ -1,0 +1,26 @@
+// Loops in NxScript
+
+// Classic for loop
+for (var i = 0; i < 5; i++) {
+    trace("i = " + i)
+}
+
+// For-in loop
+var colors = ["red", "green", "blue"]
+for (var color in colors) {
+    trace("Color: " + color)
+}
+
+// While loop
+var counter = 0
+while (counter < 3) {
+    trace("Counting: " + counter)
+    counter++
+}
+
+// Do-while
+var x = 0
+do {
+    trace("x = " + x)
+    x++
+} while (x < 3)

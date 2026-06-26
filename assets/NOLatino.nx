@@ -1,0 +1,7 @@
+achetetepe('https://jsonplaceholder.typicode.com/todos/1', function(respuesta) {
+    if (respuesta == null) {
+        escribir("Error al obtener datos");
+    } else {
+        escribir("Datos obtenidos: " + respuesta);
+    }
+});

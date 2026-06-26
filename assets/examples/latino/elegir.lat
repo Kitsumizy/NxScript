@@ -1,0 +1,20 @@
+# Elegir (switch) en Latino
+
+variable dia = 3
+
+elegir dia {
+    caso 1:
+        escribir("Lunes")
+    caso 2:
+        escribir("Martes")
+    caso 3:
+        escribir("Miércoles")
+    caso 4:
+        escribir("Jueves")
+    caso 5:
+        escribir("Viernes")
+    caso 6, 7:
+        escribir("Fin de semana")
+    otro:
+        escribir("Día inválido")
+}

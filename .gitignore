@@ -1,0 +1,57 @@
+# Logs
+*.log
+log.log
+test_results/
+
+# Compiled files and binaries
+snapshot
+*.n
+*.nxb
+*.js
+*.swf
+
+# Source and build directories
+out/
+export/
+test/bin
+test/test_flixel
+bin/
+
+# Documentation
+docs/
+doc.xml
+
+# IDE and editor folders
+.vscode/
+.idea/
+
+# Node modules
+node_modules/
+
+# Haxe libraries
+.haxelib/
+
+# Miscellaneous
+*.ignore/
+*vsix
+
+# Unusual patterns
+*.cpp/
+*.cs/
+*.zip
+*.nro
+*.elf
+*.a
+
+# Include just "test/bin/cppSwitch_scriptbench/Makefile"
+!test/bin/
+!test/bin/cppSwitch_scriptbench/
+!test/bin/cppSwitch_scriptbench/Makefile
+
+# Include just "bin/cppSwitch_scriptbench/wrapper_src"
+!bin/
+!bin/cppSwitch_scriptbench/
+!bin/cppSwitch_scriptbench/wrapper_src
+!bin/cppSwitch_scriptbench/wrapper_src/**
+/test/bench/cpp
+image.png
