@@ -1,0 +1,29 @@
+package nx.lexer.nxscript;
+enum NxKeyword {
+    Let;
+    If;
+    Else;
+    While;
+    For;
+    Function;
+    Return;
+    Break;
+    Continue;
+    Var;
+    Const;
+    True;
+    False;
+    Null;
+    New;
+    This;
+    Switch;
+    Case;
+    Default;
+    Class;
+    Abstract;
+    Match;
+    Try;
+    Catch;
+    Throw;
+    Is;
+}

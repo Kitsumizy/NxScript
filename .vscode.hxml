@@ -1,0 +1,3 @@
+--class-path source
+--main main.Main
+-D NX_MODE=0

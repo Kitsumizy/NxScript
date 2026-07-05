@@ -1,0 +1,21 @@
+function sayHi()
+{
+    trace("Hi, NxScript!")
+
+}
+function notBuiltInCall()
+{
+    trace("This is a function that is not built-in.")
+}
+trace("hi")
+if (true)
+{
+    trace("This will execute because the condition is true.")
+}
+notBuiltInCall()
+if (false)
+{
+    trace("This will not execute because the condition is false.")
+}
+
+call("Calling a function from the main script!")

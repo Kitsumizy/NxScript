@@ -1,0 +1,14 @@
+{
+  "name": "nxscript",
+  "url" : "https://github.com/Kitsumizy/NxScript",
+  "license": "MIT",
+  "tags": ["cross", "platform", "script", "haxe"],
+  "description": "NxScript is a cross-platform scripting language built on top of Haxe. It allows developers to write scripts that can run on multiple platforms seamlessly.",
+  "version": "0.6.0",
+  "classPath": "source/",
+  "releasenote": "Rewrite the entire project to improve performance and add new features.",
+  "contributors": ["senioritaelizabeth"],
+  "dependencies": {
+  },
+  "main": "main.Main"
+}
