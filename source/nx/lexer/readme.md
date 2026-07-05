@@ -61,13 +61,11 @@ class MyLexer extends Lexer<MyKeyword> {
         super(source);
     }
 
-    override function lexIdentifier():Token<MyKeyword> {
+    override function lex():TokenStream {
         // Recognize identifiers and keywords here.
     }
 
-    override function lexToken():Token<MyKeyword> {
-        // Read the next token from the source.
-    }
+    
 }
 ```
 
