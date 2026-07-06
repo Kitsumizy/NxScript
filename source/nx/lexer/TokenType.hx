@@ -44,6 +44,8 @@ enum TokenType<KeywordType> {
 
     AndAnd;
     OrOr;
+    QuestionQuestion;
+    QuestionDot;
 
     PlusEqual;
     MinusEqual;

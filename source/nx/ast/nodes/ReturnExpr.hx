@@ -1,11 +1,10 @@
 package nx.ast.nodes;
 
 import nx.ast.Expr;
-import nx.ast.Statement;
 import nx.ast.NodeId;
 import nx.ast.NodeIdGenerator;
 
-class ReturnStmt implements Statement {
+class ReturnExpr implements Expr {
 	public final nodeId:NodeId;
 	public final value:Null<Expr>;
 
@@ -15,7 +14,7 @@ class ReturnStmt implements Statement {
 	}
 
 	public function toString():String {
-		return value == null ? 'ReturnStmt()' : 'ReturnStmt(${value})';
+		return value == null ? 'ReturnExpr()' : 'ReturnExpr(${value})';
 	}
 }
 

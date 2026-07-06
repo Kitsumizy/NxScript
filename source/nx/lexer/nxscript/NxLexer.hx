@@ -148,6 +148,16 @@ class NxLexer extends Lexer<NxKeyword> {
                         tokens.push(makeToken(TokenType.Invalid, "|", startLine, startColumn, startIndex));
                     }
 
+                case "?":
+                    advance();
+                    if (matchChar("?")) {
+                        tokens.push(makeToken(TokenType.QuestionQuestion, "??", startLine, startColumn, startIndex));
+                    } else if (matchChar(".")) {
+                        tokens.push(makeToken(TokenType.QuestionDot, "?.", startLine, startColumn, startIndex));
+                    } else {
+                        tokens.push(makeToken(TokenType.Invalid, "?", startLine, startColumn, startIndex));
+                    }
+
                 case "\"", "'", "`":
                     tokens.push(readString(startLine, startColumn, startIndex));
 

@@ -37,7 +37,7 @@ haxelib git nxscript https://github.com/senioritaelizabeth/NxScript.git
 <haxelib name="nxscript"/>
 ```
 
----
+## <!--
 
 ## quick start
 
@@ -479,7 +479,7 @@ src/nx/
 │   │   └── HaxeScriptTokenizer.hx
 │   ├── Bytecode.hx        # opcodes + Value enum
 │   ├── Token.hx           # token types
-│   ├── AST.hx             # expression/statement nodes
+│   ├── AST.hx             # expression/Expr nodes
 │   ├── NativeClasses.hx   # built-in methods
 │   ├── NxProxy.hx         # script class → Haxe proxy
 │   └── NativeProxy.hx     # Haxe object → shadow map
@@ -524,4 +524,4 @@ made by [@senioritaelizabeth](https://github.com/senioritaelizabeth) · thanks t
 
 </div>
 
-Linus Torvalds was here.
+Linus Torvalds was here. -->

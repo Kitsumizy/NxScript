@@ -3,18 +3,17 @@ package nx.semantic;
 import haxe.ds.IntMap;
 import nx.common.NxError;
 import nx.ast.Expr;
-import nx.ast.Statement;
 import nx.ast.nodes.*;
 
 class SemanticProgram {
 
-	public final statements:Array<Statement>;
+	public final exprs:Array<Expr>;
 	public final diagnostics:Array<NxError>;
 	final annotations:IntMap<Symbol>;
 
 
-	public function new(statements:Array<Statement>, annotations:IntMap<Symbol>, diagnostics:Array<NxError>) {
-		this.statements = statements;
+	public function new(exprs:Array<Expr>, annotations:IntMap<Symbol>, diagnostics:Array<NxError>) {
+		this.exprs = exprs;
 		this.annotations = annotations;
 		this.diagnostics = diagnostics;
 	}
@@ -22,8 +21,8 @@ class SemanticProgram {
 	public function toString():String {
 		var lines:Array<String> = ["Annotated AST"];
 
-		for (i in 0...statements.length)
-			appendStatement(lines, statements[i], "", i == statements.length - 1);
+		for (i in 0...exprs.length)
+			appendTopLevelExpr(lines, exprs[i], "", i == exprs.length - 1);
 
 		if (diagnostics.length > 0) {
 			lines.push("");
@@ -42,72 +41,101 @@ class SemanticProgram {
 		return annotations.get(nodeId);
 	}
 
-	function appendStatement(lines:Array<String>, statement:Statement, prefix:String, isLast:Bool):Void {
+	function appendTopLevelExpr(lines:Array<String>, expr:Expr, prefix:String, isLast:Bool):Void {
 		var connector = isLast ? " └─ " : " ├─ ";
 		var childPrefix = prefix + (isLast ? "    " : " │   ");
 
-		if (Std.isOfType(statement, FunctionStmt)) {
-			var fn:FunctionStmt = cast statement;
-			lines.push(prefix + connector + 'Function ${fn.name}(${fn.params.join(", ")})${suffix(statement)}');
-			appendStatement(lines, fn.body, childPrefix, true);
+		if (Std.isOfType(expr, FunctionExpr)) {
+			var fn:FunctionExpr = cast expr;
+			lines.push(prefix + connector + 'Function ${fn.name}(${fn.params.join(", ")})${suffix(expr)}');
+			appendTopLevelExpr(lines, fn.body, childPrefix, true);
 			return;
 		}
 
-		if (Std.isOfType(statement, BlockStmt)) {
-			var block:BlockStmt = cast statement;
-			lines.push(prefix + connector + 'Block${suffix(statement)}');
+		if (Std.isOfType(expr, BlockExpr)) {
+			var block:BlockExpr = cast expr;
+			lines.push(prefix + connector + 'Block${suffix(expr)}');
 
-			for (i in 0...block.statements.length)
-				appendStatement(lines, block.statements[i], childPrefix, i == block.statements.length - 1);
+			for (i in 0...block.exprs.length)
+				appendTopLevelExpr(lines, block.exprs[i], childPrefix, i == block.exprs.length - 1);
 
 			return;
 		}
 
-		if (Std.isOfType(statement, ExpressionStmt)) {
-			var exprStmt:ExpressionStmt = cast statement;
-			lines.push(prefix + connector + formatExpr(exprStmt.expression) + suffix(statement));
+		if (Std.isOfType(expr, ExpressionExpr)) {
+			var exprStmt:ExpressionExpr = cast expr;
+			lines.push(prefix + connector + formatExpr(exprStmt.expression) + suffix(expr));
 			return;
 		}
 
-		if (Std.isOfType(statement, VariableStmt)) {
-			var variable:VariableStmt = cast statement;
+		if (Std.isOfType(expr, VariableExpr)) {
+			var variable:VariableExpr = cast expr;
 			var kind = variable.isConst ? "Const" : "Var";
 			var label = '${kind} ${variable.name}';
 
 			if (variable.initializer != null)
 				label += ' = ${formatExpr(variable.initializer)}';
 
-			lines.push(prefix + connector + label + suffix(statement));
+			lines.push(prefix + connector + label + suffix(expr));
 			return;
 		}
 
-		if (Std.isOfType(statement, ReturnStmt)) {
-			var ret:ReturnStmt = cast statement;
-			lines.push(prefix + connector + (ret.value == null ? "Return" : 'Return ${formatExpr(ret.value)}') + suffix(statement));
+		if (Std.isOfType(expr, ReturnExpr)) {
+			var ret:ReturnExpr = cast expr;
+			lines.push(prefix + connector + (ret.value == null ? "Return" : 'Return ${formatExpr(ret.value)}') + suffix(expr));
 			return;
 		}
 
-		if (Std.isOfType(statement, IfStmt)) {
-			var ifStmt:IfStmt = cast statement;
-			lines.push(prefix + connector + 'If ${formatExpr(ifStmt.condition)}' + suffix(statement));
-			appendStatement(lines, ifStmt.thenBranch, childPrefix, ifStmt.elseBranch == null);
+		if (Std.isOfType(expr, IfExpr)) {
+			var ifExpr:IfExpr = cast expr;
+			lines.push(prefix + connector + 'If ${formatExpr(ifExpr.condition)}' + suffix(expr));
+			appendTopLevelExpr(lines, ifExpr.thenBranch, childPrefix, ifExpr.elseBranch == null);
 
-			if (ifStmt.elseBranch != null) {
+			if (ifExpr.elseBranch != null) {
 				lines.push(prefix + " └─ Else");
-				appendStatement(lines, ifStmt.elseBranch, prefix + "    ", true);
+				appendTopLevelExpr(lines, ifExpr.elseBranch, prefix + "    ", true);
 			}
 
 			return;
 		}
 
-		if (Std.isOfType(statement, WhileStmt)) {
-			var whileStmt:WhileStmt = cast statement;
-			lines.push(prefix + connector + 'While ${formatExpr(whileStmt.condition)}' + suffix(statement));
-			appendStatement(lines, whileStmt.body, childPrefix, true);
+		if (Std.isOfType(expr, WhileExpr)) {
+			var whileExpr:WhileExpr = cast expr;
+			lines.push(prefix + connector + 'While ${formatExpr(whileExpr.condition)}' + suffix(expr));
+			appendTopLevelExpr(lines, whileExpr.body, childPrefix, true);
 			return;
 		}
 
-		lines.push(prefix + connector + Std.string(statement) + suffix(statement));
+		if (Std.isOfType(expr, ForExpr)) {
+			var forExpr:ForExpr = cast expr;
+			lines.push(prefix + connector + 'For${suffix(expr)}');
+			if (forExpr.initializer != null)
+				lines.push(childPrefix + "init " + formatExpr(forExpr.initializer));
+			if (forExpr.condition != null)
+				lines.push(childPrefix + "cond " + formatExpr(forExpr.condition));
+			if (forExpr.increment != null)
+				lines.push(childPrefix + "inc " + formatExpr(forExpr.increment));
+			appendTopLevelExpr(lines, forExpr.body, childPrefix, true);
+			return;
+		}
+
+		if (Std.isOfType(expr, BreakExpr)) {
+			lines.push(prefix + connector + 'Break${suffix(expr)}');
+			return;
+		}
+
+		if (Std.isOfType(expr, ContinueExpr)) {
+			lines.push(prefix + connector + 'Continue${suffix(expr)}');
+			return;
+		}
+
+		if (Std.isOfType(expr, UnsupportedExpr)) {
+			var unsupported:UnsupportedExpr = cast expr;
+			lines.push(prefix + connector + 'Unsupported ${unsupported.message}${suffix(expr)}');
+			return;
+		}
+
+		lines.push(prefix + connector + Std.string(expr) + suffix(expr));
 	}
 
 	function formatExpr(expr:Expr):String {
@@ -135,6 +163,21 @@ class SemanticProgram {
 		if (Std.isOfType(expr, UnaryExpr)) {
 			var unary:UnaryExpr<Dynamic> = cast expr;
 			return '${formatOperator(unary.op)}${formatExpr(unary.right)}';
+		}
+
+		if (Std.isOfType(expr, ArrayExpr)) {
+			var arrayExpr:ArrayExpr = cast expr;
+			return '[${[for (element in arrayExpr.elements) formatExpr(element)].join(", ")}]';
+		}
+
+		if (Std.isOfType(expr, DictExpr)) {
+			var dictExpr:DictExpr = cast expr;
+			return '{${[for (entry in dictExpr.entries) formatExpr(entry.key) + ": " + formatExpr(entry.value)].join(", ")}}';
+		}
+
+		if (Std.isOfType(expr, IndexExpr)) {
+			var indexExpr:IndexExpr = cast expr;
+			return '${formatExpr(indexExpr.target)}[${formatExpr(indexExpr.index)}]';
 		}
 
 		return Std.string(expr);

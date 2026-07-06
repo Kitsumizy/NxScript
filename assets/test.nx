@@ -19,3 +19,26 @@ if (false)
 }
 
 call("Calling a function from the main script!")
+class Person {
+	var name = "n";
+	function label() {
+		return `name=${name}`;
+	}
+}
+
+var p = new Person();
+var xs = [1, 2, 3];
+var m = {"a": xs[0]};
+var n = p?.name ?? "anon";
+var ok = p is Person;
+
+match (n) {
+	case "anon": println(n);
+	default: println("named");
+}
+
+try {
+	throw "boom";
+} catch (err) {
+	println(err);
+}

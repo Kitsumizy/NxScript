@@ -15,28 +15,29 @@ That's where it stops. Nothing actually runs yet.
 
 ## Bugs
 
-- [ ] `IRBuilder`'s `UnaryExpr` case doesn't emit the operator's opcode -
+- [x] `IRBuilder`'s `UnaryExpr` case doesn't emit the operator's opcode -
       `-x` compiles as just `x`
-- [ ] `emitStatement` / `emitExpr` have no default case for unknown nodes -
+- [x] `emitTopLevelExpr` / `emitExpr` have no default case for unknown nodes -
       unhandled node types silently do nothing instead of erroring
-- [ ] `for`, `break`, `continue` are reserved keywords but have no AST node,
+- [x] `for`, `break`, `continue` are reserved keywords but have no AST node,
       no semantic case, no IR case. Implement them or remove from the lexer.
 
 ## Missing language features (keywords already reserved, not implemented)
 
-- [ ] `class`, `new`, `this`
-- [ ] `switch` / `match` / `case` / `default`
-- [ ] `try` / `catch` / `throw`
-- [ ] `is` operator
-- [ ] arrays and dicts (literals + indexing)
-- [ ] template strings
-- [ ] `??` and `?.` - not even tokenized yet
+- [x] `class`, `new`, `this` - frontend + high-level IR only; no bytecode/runtime yet
+      Classes are represented separately in `IRProgram.classes`; globals only load/store class refs.
+- [x] `switch` / `match` / `case` / `default` - parsed/analyzed/emitted as high-level IR
+- [x] `try` / `catch` / `throw` - parsed/analyzed/emitted as high-level IR
+- [x] `is` operator - parsed/analyzed/emitted as high-level IR
+- [x] arrays and dicts - literals + indexing parse/analyze/emitted as high-level IR
+- [x] template strings - basic `${identifier}` interpolation parsed/analyzed/emitted as high-level IR
+- [x] `??` and `?.` - parsed/analyzed/emitted as high-level IR
 
 ## Semantic analyzer
 
-- [ ] `let` / `const` / `var` are all treated as the same kind - no error on
+- [x] `let` / `const` / `var` are all treated as the same kind - no error on
       reassigning a `const`
-- [ ] check that `break` / `continue` are inside a loop (once `for` exists)
+- [x] check that `break` / `continue` are inside a loop (once `for` exists)
 
 ## Testing
 

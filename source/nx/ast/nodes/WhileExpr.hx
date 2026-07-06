@@ -1,23 +1,22 @@
 package nx.ast.nodes;
 
 import nx.ast.Expr;
-import nx.ast.Statement;
 import nx.ast.NodeId;
 import nx.ast.NodeIdGenerator;
 
-class WhileStmt implements Statement {
+class WhileExpr implements Expr {
 	public final nodeId:NodeId;
 	public final condition:Expr;
-	public final body:Statement;
+	public final body:Expr;
 
-	public function new(condition:Expr, body:Statement) {
+	public function new(condition:Expr, body:Expr) {
 		this.nodeId = NodeIdGenerator.next();
 		this.condition = condition;
 		this.body = body;
 	}
 
 	public function toString():String {
-		return 'WhileStmt(${condition}, ${body})';
+		return 'WhileExpr(${condition}, ${body})';
 	}
 }
 

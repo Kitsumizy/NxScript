@@ -1,11 +1,10 @@
 package nx.ast.nodes;
 
 import nx.ast.Expr;
-import nx.ast.Statement;
 import nx.ast.NodeId;
 import nx.ast.NodeIdGenerator;
 
-class ExpressionStmt implements Statement {
+class ExpressionExpr implements Expr {
 	public final nodeId:NodeId;
 	public final expression:Expr;
 
@@ -15,6 +14,6 @@ class ExpressionStmt implements Statement {
 	}
 
 	public function toString():String {
-		return 'ExpressionStmt(${expression})';
+		return 'ExpressionExpr(${expression})';
 	}
 }

@@ -4,8 +4,8 @@ import haxe.ds.IntMap;
 import nx.common.NxError;
 import nx.common.NxPosition;
 import nx.ast.Expr;
-import nx.ast.Statement;
 import nx.ast.nodes.*;
+import nx.lexer.TokenType;
 import nx.script.NxManager;
 import nx.parser.Program;
 
@@ -15,6 +15,8 @@ class SemanticAnalyzer {
 	var diagnostics:Array<NxError>;
 	var scopeStack:Array<Scope>;
 	var builtinSymbols:Array<Symbol>;
+	var loopDepth:Int;
+	var classDepth:Int;
 
 	public function new() {
 		builtinSymbols = [
@@ -40,13 +42,15 @@ class SemanticAnalyzer {
 		annotations = new IntMap<Symbol>();
 		diagnostics = [];
 		scopeStack = [];
+		loopDepth = 0;
+		classDepth = 0;
 
 		pushScope();
 		seedBuiltins(currentScope());
 
-		analyzeStatements(program.statements);
+		analyzeTopLevelExprs(program.exprs);
 		analyzeTime = haxe.Timer.stamp() - analyzeTime;
-		return new SemanticProgram(program.statements, annotations, diagnostics);
+		return new SemanticProgram(program.exprs, annotations, diagnostics);
 	}
 
 	public inline function currentScope():Scope {
@@ -66,39 +70,66 @@ class SemanticAnalyzer {
 
 	function seedBuiltins(scope:Scope):Void {
 		for (builtin in builtinSymbols)
-			scope.declare(new Symbol(builtin.name, builtin.kind, scope.depth, builtin.arity, builtin.captured));
+			scope.declare(new Symbol(builtin.name, builtin.kind, scope.depth, builtin.arity, builtin.captured, builtin.isConst));
 	}
 
-	function registerFunctionDeclarations(statements:Array<Statement>):Void {
+	function registerFunctionExprs(exprs:Array<Expr>):Void {
 		var scope = currentScope();
-		for (statement in statements) {
-			if (Std.isOfType(statement, FunctionStmt)) {
-				var fn:FunctionStmt = cast statement;
+		for (expr in exprs) {
+			if (Std.isOfType(expr, ClassExpr)) {
+				var classExpr:ClassExpr = cast expr;
+				var symbol = new Symbol(classExpr.name, SymbolKind.Class, scope.depth);
+				if (!scope.declare(symbol))
+					reportError('Duplicate class ${classExpr.name}', classExpr.namePosition);
+				else
+					annotations.set(expr.nodeId, symbol);
+			}
+
+			if (Std.isOfType(expr, FunctionExpr)) {
+				var fn:FunctionExpr = cast expr;
 				var symbol = new Symbol(fn.name, SymbolKind.Function, scope.depth, fn.params.length);
 				if (!scope.declare(symbol))
 					reportError('Duplicate function ${fn.name}', fn.namePosition);
 				else
-					annotations.set(statement.nodeId, symbol);
+					annotations.set(expr.nodeId, symbol);
 			}
 		}
 	}
 
-	function analyzeStatements(statements:Array<Statement>):Void {
-		registerFunctionDeclarations(statements);
-		for (statement in statements)
-			analyzeStatement(statement);
+	function analyzeTopLevelExprs(exprs:Array<Expr>):Void {
+		registerFunctionExprs(exprs);
+		for (expr in exprs)
+			analyzeTopLevelExpr(expr);
 	}
 
-	function analyzeStatement(statement:Statement):Void {
-		if (Std.isOfType(statement, FunctionStmt)) {
-			var fn:FunctionStmt = cast statement;
+	function analyzeTopLevelExpr(expr:Expr):Void {
+		if (Std.isOfType(expr, ClassExpr)) {
+			var classExpr:ClassExpr = cast expr;
+			var symbol = currentScope().resolveLocal(classExpr.name);
+			if (symbol != null)
+				annotations.set(expr.nodeId, symbol);
+
+			pushScope();
+			classDepth++;
+			currentScope().declare(new Symbol("this", SymbolKind.Parameter, currentScope().depth));
+			registerClassFields(classExpr);
+			registerFunctionExprs(classExpr.members);
+			for (member in classExpr.members)
+				analyzeTopLevelExpr(member);
+			classDepth--;
+			popScope();
+			return;
+		}
+
+		if (Std.isOfType(expr, FunctionExpr)) {
+			var fn:FunctionExpr = cast expr;
 			var symbol = currentScope().resolveLocal(fn.name);
 			if (symbol == null) {
 				symbol = new Symbol(fn.name, SymbolKind.Function, currentScope().depth, fn.params.length);
 				currentScope().declare(symbol);
 			}
 
-			annotations.set(statement.nodeId, symbol);
+			annotations.set(expr.nodeId, symbol);
 
 			pushScope();
 			for (param in fn.params) {
@@ -111,61 +142,171 @@ class SemanticAnalyzer {
 			return;
 		}
 
-		if (Std.isOfType(statement, BlockStmt)) {
-			analyzeBlock(cast statement);
+		if (Std.isOfType(expr, BlockExpr)) {
+			analyzeBlock(cast expr);
 			return;
 		}
 
-		if (Std.isOfType(statement, ExpressionStmt)) {
-			var exprStmt:ExpressionStmt = cast statement;
+		if (Std.isOfType(expr, ExpressionExpr)) {
+			var exprStmt:ExpressionExpr = cast expr;
 			analyzeExpr(exprStmt.expression);
 			return;
 		}
 
-		if (Std.isOfType(statement, VariableStmt)) {
-			var variable:VariableStmt = cast statement;
+		if (Std.isOfType(expr, VariableExpr)) {
+			var variable:VariableExpr = cast expr;
 			if (variable.initializer != null)
 				analyzeExpr(variable.initializer);
 
-			var symbol = new Symbol(variable.name, SymbolKind.Variable, currentScope().depth);
+			if (classDepth > 0) {
+				var field = currentScope().resolveLocal(variable.name);
+				if (field != null && field.kind == SymbolKind.Field)
+					annotations.set(expr.nodeId, field);
+				else {
+					var symbol = new Symbol(variable.name, SymbolKind.Field, currentScope().depth, null, false, variable.isConst);
+					if (!currentScope().declare(symbol))
+						reportError('Duplicate field ${variable.name}', variable.namePosition);
+					else
+						annotations.set(expr.nodeId, symbol);
+				}
+			} else {
+				var symbol = new Symbol(variable.name, SymbolKind.Variable, currentScope().depth, null, false, variable.isConst);
+				if (!currentScope().declare(symbol))
+					reportError('Duplicate variable ${variable.name}', variable.namePosition);
+				else
+					annotations.set(expr.nodeId, symbol);
+			}
+
+			return;
+		}
+
+		if (Std.isOfType(expr, IfExpr)) {
+			var ifExpr:IfExpr = cast expr;
+			analyzeExpr(ifExpr.condition);
+			analyzeTopLevelExpr(ifExpr.thenBranch);
+			if (ifExpr.elseBranch != null)
+				analyzeTopLevelExpr(ifExpr.elseBranch);
+			return;
+		}
+
+		if (Std.isOfType(expr, WhileExpr)) {
+			var whileExpr:WhileExpr = cast expr;
+			analyzeExpr(whileExpr.condition);
+			loopDepth++;
+			analyzeTopLevelExpr(whileExpr.body);
+			loopDepth--;
+			return;
+		}
+
+		if (Std.isOfType(expr, ForExpr)) {
+			analyzeFor(cast expr);
+			return;
+		}
+
+		if (Std.isOfType(expr, BreakExpr)) {
+			var breakExpr:BreakExpr = cast expr;
+			if (loopDepth == 0)
+				reportError("'break' can only be used inside a loop.", breakExpr.position);
+			return;
+		}
+
+		if (Std.isOfType(expr, ContinueExpr)) {
+			var continueExpr:ContinueExpr = cast expr;
+			if (loopDepth == 0)
+				reportError("'continue' can only be used inside a loop.", continueExpr.position);
+			return;
+		}
+
+		if (Std.isOfType(expr, ReturnExpr)) {
+			var returnExpr:ReturnExpr = cast expr;
+			if (returnExpr.value != null)
+				analyzeExpr(returnExpr.value);
+			return;
+		}
+
+		if (Std.isOfType(expr, ThrowExpr)) {
+			var throwExpr:ThrowExpr = cast expr;
+			analyzeExpr(throwExpr.value);
+			return;
+		}
+
+		if (Std.isOfType(expr, TryCatchExpr)) {
+			analyzeTryCatch(cast expr);
+			return;
+		}
+
+		if (Std.isOfType(expr, MatchExpr)) {
+			analyzeMatch(cast expr);
+			return;
+		}
+
+		if (Std.isOfType(expr, UnsupportedExpr)) {
+			var unsupported:UnsupportedExpr = cast expr;
+			reportError(unsupported.message, unsupported.position);
+			return;
+		}
+
+		analyzeExpr(expr);
+	}
+
+	function analyzeBlock(block:BlockExpr):Void {
+		pushScope();
+		registerFunctionExprs(block.exprs);
+		for (expr in block.exprs)
+			analyzeTopLevelExpr(expr);
+		popScope();
+	}
+
+	function registerClassFields(classExpr:ClassExpr):Void {
+		for (member in classExpr.members) {
+			if (!Std.isOfType(member, VariableExpr))
+				continue;
+
+			var field:VariableExpr = cast member;
+			var symbol = new Symbol(field.name, SymbolKind.Field, currentScope().depth, null, false, field.isConst);
 			if (!currentScope().declare(symbol))
-				reportError('Duplicate variable ${variable.name}', variable.namePosition);
+				reportError('Duplicate field ${field.name}', field.namePosition);
 			else
-				annotations.set(statement.nodeId, symbol);
-
-			return;
-		}
-
-		if (Std.isOfType(statement, IfStmt)) {
-			var ifStmt:IfStmt = cast statement;
-			analyzeExpr(ifStmt.condition);
-			analyzeStatement(ifStmt.thenBranch);
-			if (ifStmt.elseBranch != null)
-				analyzeStatement(ifStmt.elseBranch);
-			return;
-		}
-
-		if (Std.isOfType(statement, WhileStmt)) {
-			var whileStmt:WhileStmt = cast statement;
-			analyzeExpr(whileStmt.condition);
-			analyzeStatement(whileStmt.body);
-			return;
-		}
-
-		if (Std.isOfType(statement, ReturnStmt)) {
-			var returnStmt:ReturnStmt = cast statement;
-			if (returnStmt.value != null)
-				analyzeExpr(returnStmt.value);
-			return;
+				annotations.set(member.nodeId, symbol);
 		}
 	}
 
-	function analyzeBlock(block:BlockStmt):Void {
+	function analyzeFor(forExpr:ForExpr):Void {
 		pushScope();
-		registerFunctionDeclarations(block.statements);
-		for (statement in block.statements)
-			analyzeStatement(statement);
+
+		if (forExpr.initializer != null)
+			analyzeTopLevelExpr(forExpr.initializer);
+
+		if (forExpr.condition != null)
+			analyzeExpr(forExpr.condition);
+
+		if (forExpr.increment != null)
+			analyzeExpr(forExpr.increment);
+
+		loopDepth++;
+		analyzeTopLevelExpr(forExpr.body);
+		loopDepth--;
+
 		popScope();
+	}
+
+	function analyzeTryCatch(tryCatch:TryCatchExpr):Void {
+		analyzeTopLevelExpr(tryCatch.tryBody);
+		pushScope();
+		currentScope().declare(new Symbol(tryCatch.errorName, SymbolKind.Variable, currentScope().depth));
+		analyzeTopLevelExpr(tryCatch.catchBody);
+		popScope();
+	}
+
+	function analyzeMatch(matchExpr:MatchExpr):Void {
+		analyzeExpr(matchExpr.target);
+		for (matchCase in matchExpr.cases) {
+			analyzeExpr(matchCase.pattern);
+			analyzeTopLevelExpr(matchCase.body);
+		}
+
+		if (matchExpr.defaultBranch != null)
+			analyzeTopLevelExpr(matchExpr.defaultBranch);
 	}
 
 	function analyzeExpr(expr:Expr):Void {
@@ -201,8 +342,21 @@ class SemanticAnalyzer {
 
 		if (Std.isOfType(expr, BinaryExpr)) {
 			var binary:BinaryExpr<Dynamic> = cast expr;
+			if (isAssignmentOperator(binary.op)) {
+				analyzeAssignment(binary);
+				return;
+			}
+
 			analyzeExpr(binary.left);
 			analyzeExpr(binary.right);
+			return;
+		}
+
+		if (Std.isOfType(expr, NewExpr)) {
+			var newExpr:NewExpr = cast expr;
+			analyzeExpr(newExpr.callee);
+			for (arg in newExpr.args)
+				analyzeExpr(arg);
 			return;
 		}
 
@@ -211,10 +365,83 @@ class SemanticAnalyzer {
 			analyzeExpr(unary.right);
 			return;
 		}
+
+		if (Std.isOfType(expr, ArrayExpr)) {
+			var arrayExpr:ArrayExpr = cast expr;
+			for (element in arrayExpr.elements)
+				analyzeExpr(element);
+			return;
+		}
+
+		if (Std.isOfType(expr, DictExpr)) {
+			var dictExpr:DictExpr = cast expr;
+			for (entry in dictExpr.entries) {
+				analyzeExpr(entry.key);
+				analyzeExpr(entry.value);
+			}
+			return;
+		}
+
+		if (Std.isOfType(expr, IndexExpr)) {
+			var indexExpr:IndexExpr = cast expr;
+			analyzeExpr(indexExpr.target);
+			analyzeExpr(indexExpr.index);
+			return;
+		}
+
+		if (Std.isOfType(expr, MemberExpr)) {
+			var memberExpr:MemberExpr = cast expr;
+			analyzeExpr(memberExpr.target);
+			return;
+		}
+
+		if (Std.isOfType(expr, TemplateExpr)) {
+			var templateExpr:TemplateExpr = cast expr;
+			for (part in templateExpr.parts)
+				analyzeExpr(part);
+			return;
+		}
+
+		if (Std.isOfType(expr, UnsupportedExpr)) {
+			var unsupported:UnsupportedExpr = cast expr;
+			reportError(unsupported.message, unsupported.position);
+			return;
+		}
 	}
 
 	function resolveSymbolFromExpr(expr:Expr):Null<Symbol> {
 		return annotations.get(expr.nodeId);
+	}
+
+	function analyzeAssignment(binary:BinaryExpr<Dynamic>):Void {
+		analyzeExpr(binary.right);
+
+		if (!Std.isOfType(binary.left, IdentifierExpr)) {
+			reportError("Invalid assignment target.", syntheticPosition());
+			analyzeExpr(binary.left);
+			return;
+		}
+
+		var identifier:IdentifierExpr = cast binary.left;
+		analyzeExpr(identifier);
+		var symbol = resolveSymbolFromExpr(identifier);
+		if (symbol == null || symbol.kind == SymbolKind.Undefined)
+			return;
+
+		if (symbol.kind != SymbolKind.Variable && symbol.kind != SymbolKind.Parameter && symbol.kind != SymbolKind.Field) {
+			reportError('Cannot assign to ${symbol.kind}.', identifier.position);
+			return;
+		}
+
+		if (symbol.isConst)
+			reportError('Cannot reassign const ${symbol.name}.', identifier.position);
+	}
+
+	function isAssignmentOperator(op:TokenType<Dynamic>):Bool {
+		return switch (op) {
+			case Equal | PlusEqual | MinusEqual | StarEqual | SlashEqual: true;
+			default: false;
+		}
 	}
 
 	function reportError(message:String, position:NxPosition):Void {
@@ -228,6 +455,10 @@ class SemanticAnalyzer {
 			return 'Undefined symbol ${name}';
 
 		return 'Undefined symbol ${name}. Did you mean "${suggestion.name}"?';
+	}
+
+	function syntheticPosition():NxPosition {
+		return new NxPosition(1, 1, 0, "<semantic>", "");
 	}
 
 }

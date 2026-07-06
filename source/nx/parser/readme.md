@@ -64,7 +64,7 @@ if (matchKeyword(MyKeyword.Function))
 3. Build AST nodes.
 
 ```haxe
-return new FunctionStmt(
+return new FunctionExpr(
     name,
     position,
     parameters,
@@ -75,7 +75,7 @@ return new FunctionStmt(
 4. Return the completed program.
 
 ```haxe
-return new Program(statements);
+return new Program(exprs);
 ```
 
 That's it. As long as your parser consumes a valid `TokenStream` and produces a valid `Program`, it can be used with the rest of the NxScript pipeline.

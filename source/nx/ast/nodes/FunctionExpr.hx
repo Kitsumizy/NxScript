@@ -1,18 +1,18 @@
 package nx.ast.nodes;
 
-import nx.ast.Statement;
+import nx.ast.Expr;
 import nx.ast.NodeId;
 import nx.ast.NodeIdGenerator;
 import nx.common.NxPosition;
 
-class FunctionStmt implements Statement {
+class FunctionExpr implements Expr {
 	public final nodeId:NodeId;
 	public final name:String;
 	public final namePosition:NxPosition;
 	public final params:Array<String>;
-	public final body:BlockStmt;
+	public final body:BlockExpr;
 
-	public function new(name:String, namePosition:NxPosition, params:Array<String>, body:BlockStmt) {
+	public function new(name:String, namePosition:NxPosition, params:Array<String>, body:BlockExpr) {
 		this.nodeId = NodeIdGenerator.next();
 		this.name = name;
 		this.namePosition = namePosition;
@@ -21,7 +21,7 @@ class FunctionStmt implements Statement {
 	}
 
 	public function toString():String {
-		return 'FunctionStmt(${name}, [${params.join(", ")}], ${body})';
+		return 'FunctionExpr(${name}, [${params.join(", ")}], ${body})';
 	}
 }
 

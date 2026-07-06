@@ -1,12 +1,11 @@
 package nx.ast.nodes;
 
 import nx.ast.Expr;
-import nx.ast.Statement;
 import nx.ast.NodeId;
 import nx.ast.NodeIdGenerator;
 import nx.common.NxPosition;
 
-class VariableStmt implements Statement {
+class VariableExpr implements Expr {
 	public final nodeId:NodeId;
 	public final name:String;
 	public final namePosition:NxPosition;
@@ -24,8 +23,8 @@ class VariableStmt implements Statement {
 	public function toString():String {
 		var kind = isConst ? "Const" : "Variable";
 		return initializer == null
-			? '${kind}Stmt(${name})'
-			: '${kind}Stmt(${name}, ${initializer})';
+			? '${kind}Expr(${name})'
+			: '${kind}Expr(${name}, ${initializer})';
 	}
 }
 
