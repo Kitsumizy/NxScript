@@ -11,11 +11,11 @@ If the language you need is not available, feel free to open an issue before imp
 ## Example
 
 ```haxe
-var lexer = new NxLexer(new NxSource("""
+var lexer = new NxLexer(new NxSource('
 function hello() {
     trace("Hello, World!")
 }
-"""));
+'));
 
 var tokens = lexer.lex();
 

@@ -61,21 +61,14 @@ class MyLexer extends Lexer<MyKeyword> {
         super(source);
     }
 
-    override function lex():TokenStream {
+    override function lex():TokenStream<MyKeyword> {
         // Recognize identifiers and keywords here.
     }
 
-    
 }
 ```
 
-3. Return your language keywords through `TokenType.Keyword(...)`.
-
-```haxe
-return token(TokenType.Keyword(MyKeyword.Function), "function");
-```
-
-4. Produce a valid `TokenStream`.
+3. Produce a valid `TokenStream`.
 
 ```haxe
 var lexer = new MyLexer(source);
